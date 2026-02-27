@@ -9,6 +9,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
+from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.search_tools import search_products
 
 
@@ -39,6 +40,23 @@ def _search_products_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     return search_products(query, limit=limit)
 
 
+def _my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+    cart_session_id = arguments.get("cart_session_id")
+    return my_cart(cart_session_id=str(cart_session_id) if cart_session_id is not None else None)
+
+
+def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+    product_id = str(arguments.get("product_id", ""))
+    quantity_value = arguments.get("quantity")
+    quantity = int(quantity_value) if quantity_value is not None else None
+    cart_session_id = arguments.get("cart_session_id")
+    return add_to_my_cart(
+        product_id=product_id,
+        quantity=quantity,
+        cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
+    )
+
+
 def create_tool_registry() -> dict[str, ToolDefinition]:
     """Create the default tool registry for MCP requests."""
 
@@ -58,9 +76,23 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
         ),
         "add_to_my_cart": ToolDefinition(
             name="add_to_my_cart",
-            description="Add selected product to user cart.",
-            input_schema={"type": "object"},
-            handler=_not_implemented_tool("add_to_my_cart"),
+            description=(
+                "Manage cart item by product_id. "
+                "If quantity is omitted, add one item using /cart/add. "
+                "If quantity is provided, set absolute quantity using /cart/update "
+                "(example: 4 -> 2 means set quantity to 2, not minus 2; "
+                "quantity=0 removes item)."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "product_id": {"type": "string"},
+                    "quantity": {"type": "integer", "minimum": 0},
+                    "cart_session_id": {"type": "string"},
+                },
+                "required": ["product_id"],
+            },
+            handler=_add_to_my_cart_handler,
         ),
         "checkout_order": ToolDefinition(
             name="checkout_order",
@@ -77,8 +109,11 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
         "my_cart": ToolDefinition(
             name="my_cart",
             description="Get current user cart state.",
-            input_schema={"type": "object"},
-            handler=_not_implemented_tool("my_cart"),
+            input_schema={
+                "type": "object",
+                "properties": {"cart_session_id": {"type": "string"}},
+            },
+            handler=_my_cart_handler,
         ),
         "set_widget_theme": ToolDefinition(
             name="set_widget_theme",

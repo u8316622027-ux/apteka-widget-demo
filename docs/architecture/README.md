@@ -21,10 +21,10 @@
 
 ## Registered Tools
 - `search_products` (реализован)
-- `add_to_my_cart` (stub)
+- `add_to_my_cart` (реализован: `/cart/add` + `/cart/update`)
 - `checkout_order` (stub)
 - `faq_search` (stub)
-- `my_cart` (stub)
+- `my_cart` (реализован)
 - `set_widget_theme` (stub)
 - `track_order_status_ui` (stub)
 
