@@ -78,6 +78,64 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("error", response)
         self.assertEqual(response["error"]["code"], -32601)
 
+    def test_tools_call_my_cart_delegates_to_cart_tool(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.my_cart",
+            return_value={"cart_session_id": "sess-1", "count": 0, "items": []},
+        ) as mocked_my_cart:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "my_cart",
+                        "arguments": {"cart_session_id": "sess-1"},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_my_cart.assert_called_once_with(cart_session_id="sess-1")
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["cart_session_id"], "sess-1")
+
+    def test_tools_call_add_to_my_cart_delegates_to_cart_tool(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.add_to_my_cart",
+            return_value={
+                "cart_session_id": "sess-1",
+                "count": 1,
+                "items": [{"product_id": "A12", "quantity": 2}],
+            },
+        ) as mocked_add_to_cart:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "add_to_my_cart",
+                        "arguments": {
+                            "cart_session_id": "sess-1",
+                            "product_id": "A12",
+                            "quantity": 2,
+                        },
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_add_to_cart.assert_called_once_with(
+            product_id="A12",
+            quantity=2,
+            cart_session_id="sess-1",
+        )
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
