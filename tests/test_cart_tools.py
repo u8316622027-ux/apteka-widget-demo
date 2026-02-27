@@ -340,6 +340,42 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer secret")
         self.assertEqual(requests[1]["headers"]["Authorization"], "Bearer secret")
 
+    def test_upstash_rest_store_get_token_supports_nested_value_payload(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            return FakeResponse(
+                (
+                    '{"result":"{\\"value\\":\\"{\\\\\\"access_token\\\\\\":'
+                    '\\\\\\"token-99\\\\\\",\\\\\\"token_type\\\\\\":\\\\\\"Bearer\\\\\\"}\\",'
+                    '\\"ex\\":604800}"}'
+                ).encode("utf-8")
+            )
+
+        store = UpstashRestCartTokenStore(
+            base_url="https://example.upstash.io",
+            token="secret",
+            ttl_seconds=123,
+            urlopen=fake_urlopen,
+        )
+        restored = store.get_token("sess-1")
+
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertEqual(restored.access_token, "token-99")
+        self.assertEqual(restored.token_type, "Bearer")
+
     def test_default_token_store_uses_upstash_env(self) -> None:
         _clear_default_token_store()
         get_settings.cache_clear()
