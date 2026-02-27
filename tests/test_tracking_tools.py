@@ -43,7 +43,7 @@ class OrderTrackingTests(unittest.TestCase):
                 }
             )
             payload = (
-                '{"data":[{"order_number":"ORD-123","status":"delivered"}],"meta":{"source":"stage"}}'
+                '{"data":[{"order_number":"ORD-123","status":"pending"}],"meta":{"source":"stage"}}'
             ).encode("utf-8")
             return FakeResponse(payload)
 
@@ -60,7 +60,33 @@ class OrderTrackingTests(unittest.TestCase):
         self.assertEqual(response["lookup"], "37369111222")
         self.assertEqual(response["count"], 1)
         self.assertEqual(response["orders"][0]["order_number"], "ORD-123")
-        self.assertEqual(response["orders"][0]["status"], "delivered")
+        self.assertEqual(response["orders"][0]["status"], "заказ получен")
+        self.assertEqual(response["orders"][0]["status_code"], "pending")
+
+    def test_track_order_status_ui_maps_new_status(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            payload = '[{"order_number":"ORD-NEW","status":"NEW"}]'.encode("utf-8")
+            return FakeResponse(payload)
+
+        repository = AptekaOrderTrackingRepository(urlopen=fake_urlopen, authorization="Bearer test")
+        response = track_order_status_ui("ORD-NEW", repository=repository)
+
+        self.assertEqual(response["count"], 1)
+        self.assertEqual(response["orders"][0]["status"], "только создан, ожидание обработки")
+        self.assertEqual(response["orders"][0]["status_code"], "NEW")
 
 
 if __name__ == "__main__":

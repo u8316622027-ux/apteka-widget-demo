@@ -13,6 +13,18 @@ from app.domain.tracking.service import OrderTrackingService
 
 APTEKA_ORDER_TRACKING_URL = "https://stage.apteka.md/api/orders-by-anything"
 APTEKA_TRACKING_AUTHORIZATION_ENV = "APTEKA_TRACKING_AUTHORIZATION"
+ORDER_STATUS_LABELS = {
+    "pending": "заказ получен",
+    "processing": "заказ обрабатывается",
+    "packaging": "заказ собирается",
+    "packed": "заказ собран",
+    "delivering": "заказ в пути",
+    "client_notified": "заказ готов, клиент уведомлен",
+    "canceled": "заказ отменен",
+    "completed": "заказ выполнен",
+    "draft": "черновик",
+    "new": "только создан, ожидание обработки",
+}
 
 
 class AptekaOrderTrackingRepository(OrderTrackingRepository):
@@ -53,7 +65,8 @@ def track_order_status_ui(
     effective_repository = repository or AptekaOrderTrackingRepository()
     service = OrderTrackingService(effective_repository)
     normalized_lookup, orders = service.track(lookup)
-    return {"lookup": normalized_lookup, "count": len(orders), "orders": orders}
+    mapped_orders = [_map_order_status(order) for order in orders]
+    return {"lookup": normalized_lookup, "count": len(mapped_orders), "orders": mapped_orders}
 
 
 def _extract_orders(payload: Any) -> list[dict[str, Any]]:
@@ -72,3 +85,19 @@ def _extract_orders(payload: Any) -> list[dict[str, Any]]:
         return [payload]
 
     return []
+
+
+def _map_order_status(order: dict[str, Any]) -> dict[str, Any]:
+    raw_status = order.get("status")
+    if not isinstance(raw_status, str):
+        return dict(order)
+
+    normalized_status = raw_status.strip()
+    if not normalized_status:
+        return dict(order)
+
+    status_label = ORDER_STATUS_LABELS.get(normalized_status.lower(), normalized_status)
+    mapped_order = dict(order)
+    mapped_order["status_code"] = normalized_status
+    mapped_order["status"] = status_label
+    return mapped_order

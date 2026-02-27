@@ -17,7 +17,9 @@
 - Outputs:
   - `lookup`
   - `count`
-  - `orders[]`
+  - `orders[]`:
+    - `status` (понятный пользователю текст)
+    - `status_code` (исходный код статуса от API)
 
 ## Dependencies
 - Внешний API: `https://stage.apteka.md/api/orders-by-anything/{x}`
@@ -27,6 +29,18 @@
 ## Edge Cases
 - Пустой `lookup` -> `ValueError`.
 - Если API вернул неожиданный формат, `orders = []`.
+
+Маппинг статусов:
+- `pending` -> `заказ получен`
+- `processing` -> `заказ обрабатывается`
+- `packaging` -> `заказ собирается`
+- `packed` -> `заказ собран`
+- `delivering` -> `заказ в пути`
+- `client_notified` -> `заказ готов, клиент уведомлен`
+- `canceled` -> `заказ отменен`
+- `completed` -> `заказ выполнен`
+- `draft` -> `черновик`
+- `NEW`/`new` -> `только создан, ожидание обработки`
 
 ## Test Cases
 - Unit:
