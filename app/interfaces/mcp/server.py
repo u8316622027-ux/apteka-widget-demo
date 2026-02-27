@@ -99,7 +99,9 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "For phone input, use full international format with country code first. "
                 "If the order was just created and user searches by order number, "
                 "tracking by number becomes available only after operator accepts the order, "
-                "so advise user to wait a bit and try again."
+                "so advise user to wait a bit and try again. "
+                "Use returned status_hint to explain context to user. "
+                "Do not treat packed as ready for pickup until client_notified."
             ),
             input_schema={
                 "type": "object",

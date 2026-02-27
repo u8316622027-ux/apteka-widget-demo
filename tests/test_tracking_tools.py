@@ -62,6 +62,7 @@ class OrderTrackingTests(unittest.TestCase):
         self.assertEqual(response["orders"][0]["order_number"], "ORD-123")
         self.assertEqual(response["orders"][0]["status"], "заказ получен")
         self.assertEqual(response["orders"][0]["status_code"], "pending")
+        self.assertIn("оператор", response["orders"][0]["status_hint"].lower())
 
     def test_track_order_status_ui_maps_new_status(self) -> None:
         class FakeResponse:
@@ -87,6 +88,32 @@ class OrderTrackingTests(unittest.TestCase):
         self.assertEqual(response["count"], 1)
         self.assertEqual(response["orders"][0]["status"], "только создан, ожидание обработки")
         self.assertEqual(response["orders"][0]["status_code"], "NEW")
+        self.assertIn("подожд", response["orders"][0]["status_hint"].lower())
+
+    def test_track_order_status_ui_maps_packed_status_with_non_ready_hint(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            payload = '[{"order_number":"ORD-PACK","status":"packed"}]'.encode("utf-8")
+            return FakeResponse(payload)
+
+        repository = AptekaOrderTrackingRepository(urlopen=fake_urlopen, authorization="Bearer test")
+        response = track_order_status_ui("ORD-PACK", repository=repository)
+
+        self.assertEqual(response["orders"][0]["status"], "заказ собран")
+        self.assertEqual(response["orders"][0]["status_code"], "packed")
+        self.assertIn("не готов", response["orders"][0]["status_hint"].lower())
 
     def test_repository_uses_dotenv_token_when_os_env_is_empty(self) -> None:
         class FakeResponse:
