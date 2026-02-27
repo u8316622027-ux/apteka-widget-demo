@@ -6,6 +6,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+from app.core.config import get_settings
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
 from app.interfaces.mcp.tools.cart_tools import (
     AptekaCartRepository,
@@ -55,6 +56,10 @@ class FakeCartRepository:
 
 
 class CartToolsTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        get_settings.cache_clear()
+        _clear_default_token_store()
+
     def test_my_cart_creates_session_when_missing(self) -> None:
         repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()
@@ -337,6 +342,7 @@ class CartToolsTests(unittest.TestCase):
 
     def test_default_token_store_uses_upstash_env(self) -> None:
         _clear_default_token_store()
+        get_settings.cache_clear()
         with patch.dict(
             os.environ,
             {
@@ -352,6 +358,7 @@ class CartToolsTests(unittest.TestCase):
 
     def test_default_token_store_is_singleton_per_process(self) -> None:
         _clear_default_token_store()
+        get_settings.cache_clear()
         with patch.dict(os.environ, {}, clear=False):
             first = _build_default_token_store()
             second = _build_default_token_store()

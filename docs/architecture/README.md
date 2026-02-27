@@ -6,6 +6,8 @@
 ## Layers
 - `app/domain/*`:
   - доменные сущности и сервисы (`ProductSummary`, `ProductSearchService`).
+- `app/core/config.py`:
+  - централизованные settings (env + `.env`) для runtime-конфигурации.
 - `app/interfaces/mcp/tools/*`:
   - MCP tools и адаптеры к внешним API.
 - `app/interfaces/mcp/server.py`:

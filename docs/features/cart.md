@@ -45,6 +45,7 @@
   - Upstash Redis REST (если заданы `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`)
   - Redis (если задан `REDIS_URL` и установлен пакет `redis`)
   - TTL токена сессии задается через `CART_TOKEN_TTL_SECONDS` (по умолчанию 604800 сек)
+  - Значения читаются из централизованных settings c поддержкой `.env` по умолчанию.
 
 ## Edge Cases
 - Пустой `product_id` -> `ValueError`.
