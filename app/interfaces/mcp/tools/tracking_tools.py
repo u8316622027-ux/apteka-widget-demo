@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
 from urllib.request import Request, urlopen as default_urlopen
@@ -40,7 +41,7 @@ class AptekaOrderTrackingRepository(OrderTrackingRepository):
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
-        self._authorization = authorization or os.getenv(APTEKA_TRACKING_AUTHORIZATION_ENV, "")
+        self._authorization = authorization or _resolve_authorization()
         self._urlopen = urlopen
 
     def lookup(self, lookup_value: str) -> list[dict[str, Any]]:
@@ -101,3 +102,30 @@ def _map_order_status(order: dict[str, Any]) -> dict[str, Any]:
     mapped_order["status_code"] = normalized_status
     mapped_order["status"] = status_label
     return mapped_order
+
+
+def _resolve_authorization() -> str:
+    env_value = os.getenv(APTEKA_TRACKING_AUTHORIZATION_ENV, "").strip()
+    if env_value:
+        return env_value
+    return _read_env_file_value(APTEKA_TRACKING_AUTHORIZATION_ENV)
+
+
+def _read_env_file_value(key: str) -> str:
+    env_path = Path(__file__).resolve().parents[4] / ".env"
+    if not env_path.exists():
+        return ""
+
+    prefix = f"{key}="
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not line.startswith(prefix):
+            continue
+        value = line[len(prefix) :].strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        return value.strip()
+
+    return ""

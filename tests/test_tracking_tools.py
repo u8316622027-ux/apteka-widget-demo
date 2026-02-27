@@ -88,6 +88,36 @@ class OrderTrackingTests(unittest.TestCase):
         self.assertEqual(response["orders"][0]["status"], "только создан, ожидание обработки")
         self.assertEqual(response["orders"][0]["status_code"], "NEW")
 
+    def test_repository_uses_dotenv_token_when_os_env_is_empty(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[dict[str, object]] = []
+
+        def fake_urlopen(request, timeout: float):
+            requests.append({"headers": dict(request.header_items())})
+            return FakeResponse(b"[]")
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch(
+                "app.interfaces.mcp.tools.tracking_tools._read_env_file_value",
+                return_value="Bearer from-dotenv",
+            ):
+                repository = AptekaOrderTrackingRepository(urlopen=fake_urlopen)
+                repository.lookup("ORD-1")
+
+        self.assertEqual(requests[0]["headers"].get("Authorization"), "Bearer from-dotenv")
+
 
 if __name__ == "__main__":
     unittest.main()
