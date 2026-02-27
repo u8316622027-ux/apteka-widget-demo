@@ -96,7 +96,10 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             name="track_order_status_ui",
             description=(
                 "Track order status by order number or phone. "
-                "For phone input, use full international format with country code first."
+                "For phone input, use full international format with country code first. "
+                "If the order was just created and user searches by order number, "
+                "tracking by number becomes available only after operator accepts the order, "
+                "so advise user to wait a bit and try again."
             ),
             input_schema={
                 "type": "object",

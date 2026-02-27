@@ -86,6 +86,8 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("order number", tool.description.lower())
         self.assertIn("phone", tool.description.lower())
         self.assertIn("country code", tool.description.lower())
+        self.assertIn("operator", tool.description.lower())
+        self.assertIn("wait", tool.description.lower())
 
     def test_tools_call_track_order_status_delegates_to_tracking_tool(self) -> None:
         registry = create_tool_registry()
