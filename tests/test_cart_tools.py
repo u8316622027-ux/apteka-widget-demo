@@ -12,6 +12,7 @@ from app.interfaces.mcp.tools.cart_tools import (
     InMemoryCartTokenStore,
     UpstashRestCartTokenStore,
     _build_default_token_store,
+    _clear_default_token_store,
     add_to_my_cart,
     my_cart,
 )
@@ -204,6 +205,7 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(requests[1]["headers"]["Authorization"], "Bearer secret")
 
     def test_default_token_store_uses_upstash_env(self) -> None:
+        _clear_default_token_store()
         with patch.dict(
             os.environ,
             {
@@ -216,6 +218,54 @@ class CartToolsTests(unittest.TestCase):
             store = _build_default_token_store()
 
         self.assertIsInstance(store, UpstashRestCartTokenStore)
+
+    def test_default_token_store_is_singleton_per_process(self) -> None:
+        _clear_default_token_store()
+        with patch.dict(os.environ, {}, clear=False):
+            first = _build_default_token_store()
+            second = _build_default_token_store()
+
+        self.assertIs(first, second)
+
+    def test_apteka_repository_add_item_calls_add_endpoint(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[dict[str, object]] = []
+
+        def fake_urlopen(request, timeout: float):
+            body = request.data.decode("utf-8") if request.data else ""
+            requests.append(
+                {
+                    "url": request.full_url,
+                    "method": request.get_method(),
+                    "headers": dict(request.header_items()),
+                    "body": body,
+                    "timeout": timeout,
+                }
+            )
+            if request.full_url.endswith("/add"):
+                return FakeResponse(b"{}")
+            return FakeResponse(b'{"data":{"items":[],"count":0}}')
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        token = CartToken(access_token="tok-1", token_type="Bearer")
+        repository.add_item(token, product_id="17405", quantity=1)
+
+        self.assertEqual(requests[0]["url"], "https://api.apteka.md/api/v1/front/cart/add")
+        self.assertEqual(requests[0]["method"], "POST")
+        self.assertEqual(requests[0]["body"], '{"id":"17405"}')
+        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer tok-1")
 
 
 if __name__ == "__main__":

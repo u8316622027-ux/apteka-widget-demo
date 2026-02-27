@@ -16,6 +16,7 @@ from app.domain.cart.service import CartService
 from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 
 APTEKA_CART_URL = "https://api.apteka.md/api/v1/front/cart"
+_DEFAULT_TOKEN_STORE: CartTokenStore | None = None
 
 
 @dataclass(slots=True)
@@ -200,24 +201,25 @@ class AptekaCartRepository(CartApiRepository):
         return _map_cart_snapshot(payload)
 
     def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
-        request_payload = json.dumps(
-            {"productId": product_id, "quantity": quantity},
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        request = Request(
-            url=f"{self._base_url}/items",
-            method="POST",
-            data=request_payload,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"{token.token_type} {token.access_token}",
-            },
-        )
-        with self._urlopen(request, timeout=self._timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        for _ in range(quantity):
+            request_payload = json.dumps(
+                {"id": product_id},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            request = Request(
+                url=f"{self._base_url}/add",
+                method="POST",
+                data=request_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"{token.token_type} {token.access_token}",
+                },
+            )
+            with self._urlopen(request, timeout=self._timeout):
+                continue
 
-        return _map_cart_snapshot(payload)
+        return self.get_cart(token)
 
 
 def my_cart(
@@ -260,27 +262,40 @@ def _build_cart_service(
 
 
 def _build_default_token_store() -> CartTokenStore:
+    global _DEFAULT_TOKEN_STORE
+    if _DEFAULT_TOKEN_STORE is not None:
+        return _DEFAULT_TOKEN_STORE
+
     upstash_url = os.environ.get("UPSTASH_REDIS_REST_URL", "").strip()
     upstash_token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "").strip()
     ttl_seconds = _get_cart_ttl_seconds()
     if upstash_url and upstash_token:
-        return UpstashRestCartTokenStore(
+        _DEFAULT_TOKEN_STORE = UpstashRestCartTokenStore(
             base_url=upstash_url,
             token=upstash_token,
             ttl_seconds=ttl_seconds,
         )
+        return _DEFAULT_TOKEN_STORE
 
     redis_url = os.environ.get("REDIS_URL", "").strip()
     if not redis_url:
-        return InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
+        _DEFAULT_TOKEN_STORE = InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
+        return _DEFAULT_TOKEN_STORE
 
     try:
         import redis  # type: ignore
     except ImportError:
-        return InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
+        _DEFAULT_TOKEN_STORE = InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
+        return _DEFAULT_TOKEN_STORE
 
     client = redis.from_url(redis_url, decode_responses=False)
-    return RedisCartTokenStore(client, ttl_seconds=ttl_seconds)
+    _DEFAULT_TOKEN_STORE = RedisCartTokenStore(client, ttl_seconds=ttl_seconds)
+    return _DEFAULT_TOKEN_STORE
+
+
+def _clear_default_token_store() -> None:
+    global _DEFAULT_TOKEN_STORE
+    _DEFAULT_TOKEN_STORE = None
 
 
 def _get_cart_ttl_seconds(default: int = 604800) -> int:

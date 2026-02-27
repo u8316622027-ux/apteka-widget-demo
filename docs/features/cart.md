@@ -31,7 +31,7 @@
 - Apteka API:
   - `GET https://api.apteka.md/api/v1/front/cart` (создание корзины + токен)
   - `GET https://api.apteka.md/api/v1/front/cart` с `Authorization` (получение корзины)
-  - `POST https://api.apteka.md/api/v1/front/cart/items` с `Authorization` (добавление товара)
+  - `POST https://api.apteka.md/api/v1/front/cart/add` с `Authorization` и body `{"id":"<product_id>"}` (добавление товара)
 - Token store:
   - In-memory (по умолчанию)
   - Upstash Redis REST (если заданы `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`)
@@ -44,6 +44,7 @@
 - Неизвестный/просроченный `cart_session_id` -> создается новая корзина и новый `cart_session_id`.
 - Если Redis недоступен или пакет `redis` не установлен, используется in-memory store.
 - Если заданы переменные Upstash REST, они имеют приоритет над `REDIS_URL`.
+- Дефолтный token-store инициализируется один раз на процесс (singleton), чтобы `cart_session_id` сохранялся между вызовами tool.
 
 ## Test Cases
 - Unit:
