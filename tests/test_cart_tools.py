@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
 from app.interfaces.mcp.tools.cart_tools import (
     AptekaCartRepository,
     InMemoryCartTokenStore,
+    UpstashRestCartTokenStore,
+    _build_default_token_store,
     add_to_my_cart,
     my_cart,
 )
@@ -132,6 +136,86 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(requests[0]["url"], "https://api.apteka.md/api/v1/front/cart")
         self.assertEqual(requests[0]["method"], "GET")
         self.assertNotIn("Authorization", requests[0]["headers"])
+
+    def test_upstash_rest_store_set_and_get_token(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[dict[str, object]] = []
+
+        def fake_urlopen(request, timeout: float):
+            body = request.data.decode("utf-8") if request.data else ""
+            requests.append(
+                {
+                    "url": request.full_url,
+                    "method": request.get_method(),
+                    "headers": dict(request.header_items()),
+                    "body": body,
+                    "timeout": timeout,
+                }
+            )
+
+            if request.full_url.endswith("/set/cart%3Asession%3Asess-1"):
+                return FakeResponse(b'{"result":"OK"}')
+
+            if request.full_url.endswith("/get/cart%3Asession%3Asess-1"):
+                return FakeResponse(
+                    b'{"result":"{\\"access_token\\":\\"token-42\\",\\"token_type\\":\\"Bearer\\"}"}'
+                )
+
+            raise AssertionError(f"Unexpected URL: {request.full_url}")
+
+        store = UpstashRestCartTokenStore(
+            base_url="https://example.upstash.io",
+            token="secret",
+            ttl_seconds=123,
+            urlopen=fake_urlopen,
+        )
+        store.set_token("sess-1", CartToken(access_token="token-42", token_type="Bearer"))
+        restored = store.get_token("sess-1")
+
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertEqual(restored.access_token, "token-42")
+        self.assertEqual(restored.token_type, "Bearer")
+        self.assertEqual(requests[0]["method"], "POST")
+        self.assertEqual(
+            requests[0]["url"], "https://example.upstash.io/set/cart%3Asession%3Asess-1"
+        )
+        self.assertEqual(
+            requests[0]["body"],
+            '{"value":"{\\"access_token\\":\\"token-42\\",\\"token_type\\":\\"Bearer\\"}","ex":123}',
+        )
+        self.assertEqual(requests[1]["method"], "GET")
+        self.assertEqual(
+            requests[1]["url"], "https://example.upstash.io/get/cart%3Asession%3Asess-1"
+        )
+        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer secret")
+        self.assertEqual(requests[1]["headers"]["Authorization"], "Bearer secret")
+
+    def test_default_token_store_uses_upstash_env(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "UPSTASH_REDIS_REST_URL": "https://example.upstash.io",
+                "UPSTASH_REDIS_REST_TOKEN": "secret",
+                "CART_TOKEN_TTL_SECONDS": "321",
+            },
+            clear=False,
+        ):
+            store = _build_default_token_store()
+
+        self.assertIsInstance(store, UpstashRestCartTokenStore)
 
 
 if __name__ == "__main__":

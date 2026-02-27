@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 from time import time
 from typing import Any, Callable
+from urllib.parse import quote
 from urllib.request import Request, urlopen as default_urlopen
 
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
@@ -82,6 +83,80 @@ class RedisCartTokenStore(CartTokenStore):
             separators=(",", ":"),
         )
         self._redis.setex(key, self._ttl_seconds, payload)
+
+    def _key(self, cart_session_id: str) -> str:
+        return f"{self._prefix}:{cart_session_id}"
+
+
+class UpstashRestCartTokenStore(CartTokenStore):
+    """Upstash Redis REST-backed token store."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        token: str,
+        prefix: str = "cart:session",
+        ttl_seconds: int = 604800,
+        timeout: float = 10.0,
+        urlopen: Callable[..., Any] = default_urlopen,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._token = token
+        self._prefix = prefix
+        self._ttl_seconds = ttl_seconds
+        self._timeout = timeout
+        self._urlopen = urlopen
+
+    def get_token(self, cart_session_id: str) -> CartToken | None:
+        key = quote(self._key(cart_session_id), safe="")
+        request = Request(
+            url=f"{self._base_url}/get/{key}",
+            method="GET",
+            headers={"Authorization": f"Bearer {self._token}"},
+        )
+        with self._urlopen(request, timeout=self._timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        raw_value = payload.get("result")
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            return None
+
+        try:
+            token_payload = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return None
+
+        access_token = str(token_payload.get("access_token") or "").strip()
+        token_type = str(token_payload.get("token_type") or "Bearer").strip() or "Bearer"
+        if not access_token:
+            return None
+
+        return CartToken(access_token=access_token, token_type=token_type)
+
+    def set_token(self, cart_session_id: str, token: CartToken) -> None:
+        key = quote(self._key(cart_session_id), safe="")
+        value = json.dumps(
+            {"access_token": token.access_token, "token_type": token.token_type},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        request_payload = json.dumps(
+            {"value": value, "ex": self._ttl_seconds},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = Request(
+            url=f"{self._base_url}/set/{key}",
+            data=request_payload,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+            },
+        )
+        with self._urlopen(request, timeout=self._timeout):
+            return
 
     def _key(self, cart_session_id: str) -> str:
         return f"{self._prefix}:{cart_session_id}"
@@ -185,17 +260,40 @@ def _build_cart_service(
 
 
 def _build_default_token_store() -> CartTokenStore:
+    upstash_url = os.environ.get("UPSTASH_REDIS_REST_URL", "").strip()
+    upstash_token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "").strip()
+    ttl_seconds = _get_cart_ttl_seconds()
+    if upstash_url and upstash_token:
+        return UpstashRestCartTokenStore(
+            base_url=upstash_url,
+            token=upstash_token,
+            ttl_seconds=ttl_seconds,
+        )
+
     redis_url = os.environ.get("REDIS_URL", "").strip()
     if not redis_url:
-        return InMemoryCartTokenStore()
+        return InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
 
     try:
         import redis  # type: ignore
     except ImportError:
-        return InMemoryCartTokenStore()
+        return InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
 
     client = redis.from_url(redis_url, decode_responses=False)
-    return RedisCartTokenStore(client)
+    return RedisCartTokenStore(client, ttl_seconds=ttl_seconds)
+
+
+def _get_cart_ttl_seconds(default: int = 604800) -> int:
+    raw_value = os.environ.get("CART_TOKEN_TTL_SECONDS", "").strip()
+    if not raw_value:
+        return default
+
+    try:
+        ttl = int(raw_value)
+    except ValueError:
+        return default
+
+    return ttl if ttl > 0 else default
 
 
 def _map_cart_snapshot(payload: Any) -> CartSnapshot:

@@ -34,13 +34,16 @@
   - `POST https://api.apteka.md/api/v1/front/cart/items` с `Authorization` (добавление товара)
 - Token store:
   - In-memory (по умолчанию)
+  - Upstash Redis REST (если заданы `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`)
   - Redis (если задан `REDIS_URL` и установлен пакет `redis`)
+  - TTL токена сессии задается через `CART_TOKEN_TTL_SECONDS` (по умолчанию 604800 сек)
 
 ## Edge Cases
 - Пустой `product_id` -> `ValueError`.
 - `quantity < 1` -> `ValueError`.
 - Неизвестный/просроченный `cart_session_id` -> создается новая корзина и новый `cart_session_id`.
 - Если Redis недоступен или пакет `redis` не установлен, используется in-memory store.
+- Если заданы переменные Upstash REST, они имеют приоритет над `REDIS_URL`.
 
 ## Test Cases
 - Unit:
