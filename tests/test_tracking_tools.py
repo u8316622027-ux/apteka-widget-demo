@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
 from app.interfaces.mcp.tools.tracking_tools import (
     AptekaOrderTrackingRepository,
@@ -45,16 +47,16 @@ class OrderTrackingTests(unittest.TestCase):
             ).encode("utf-8")
             return FakeResponse(payload)
 
-        repository = AptekaOrderTrackingRepository(urlopen=fake_urlopen)
-
-        response = track_order_status_ui("37369111222", repository=repository)
+        with patch.dict(os.environ, {"APTEKA_TRACKING_AUTHORIZATION": "Bearer test-token"}):
+            repository = AptekaOrderTrackingRepository(urlopen=fake_urlopen)
+            response = track_order_status_ui("37369111222", repository=repository)
 
         self.assertTrue(requests)
         self.assertEqual(
             requests[0]["url"], "https://stage.apteka.md/api/orders-by-anything/37369111222"
         )
         self.assertEqual(requests[0]["method"], "GET")
-        self.assertNotIn("Authorization", requests[0]["headers"])
+        self.assertEqual(requests[0]["headers"].get("Authorization"), "Bearer test-token")
         self.assertEqual(response["lookup"], "37369111222")
         self.assertEqual(response["count"], 1)
         self.assertEqual(response["orders"][0]["order_number"], "ORD-123")

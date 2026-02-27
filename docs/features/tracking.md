@@ -22,6 +22,7 @@
 ## Dependencies
 - Внешний API: `https://stage.apteka.md/api/orders-by-anything/{x}`
 - Где `x` это номер телефона или номер заказа.
+- Заголовок авторизации берется из env: `APTEKA_TRACKING_AUTHORIZATION`.
 
 ## Edge Cases
 - Пустой `lookup` -> `ValueError`.
