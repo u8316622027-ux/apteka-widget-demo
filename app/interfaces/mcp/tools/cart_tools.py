@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from time import time
 from typing import Any, Callable
 from urllib.parse import quote
 from urllib.request import Request, urlopen as default_urlopen
 
+from app.core.config import get_settings
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
 from app.domain.cart.repository import CartApiRepository, CartTokenStore
 from app.domain.cart.service import CartService
@@ -288,9 +288,10 @@ def _build_default_token_store() -> CartTokenStore:
     if _DEFAULT_TOKEN_STORE is not None:
         return _DEFAULT_TOKEN_STORE
 
-    upstash_url = os.environ.get("UPSTASH_REDIS_REST_URL", "").strip()
-    upstash_token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "").strip()
-    ttl_seconds = _get_cart_ttl_seconds()
+    settings = get_settings()
+    upstash_url = settings.upstash_redis_rest_url.strip()
+    upstash_token = settings.upstash_redis_rest_token.strip()
+    ttl_seconds = settings.cart_token_ttl_seconds
     if upstash_url and upstash_token:
         _DEFAULT_TOKEN_STORE = UpstashRestCartTokenStore(
             base_url=upstash_url,
@@ -299,7 +300,7 @@ def _build_default_token_store() -> CartTokenStore:
         )
         return _DEFAULT_TOKEN_STORE
 
-    redis_url = os.environ.get("REDIS_URL", "").strip()
+    redis_url = settings.redis_url.strip()
     if not redis_url:
         _DEFAULT_TOKEN_STORE = InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
         return _DEFAULT_TOKEN_STORE
@@ -318,19 +319,6 @@ def _build_default_token_store() -> CartTokenStore:
 def _clear_default_token_store() -> None:
     global _DEFAULT_TOKEN_STORE
     _DEFAULT_TOKEN_STORE = None
-
-
-def _get_cart_ttl_seconds(default: int = 604800) -> int:
-    raw_value = os.environ.get("CART_TOKEN_TTL_SECONDS", "").strip()
-    if not raw_value:
-        return default
-
-    try:
-        ttl = int(raw_value)
-    except ValueError:
-        return default
-
-    return ttl if ttl > 0 else default
 
 
 def _map_cart_snapshot(payload: Any) -> CartSnapshot:
