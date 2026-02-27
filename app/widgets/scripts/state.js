@@ -1,0 +1,1 @@
+﻿// Shared widget state helpers.

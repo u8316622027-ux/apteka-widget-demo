@@ -1,0 +1,97 @@
+# Frontend Split Plan (MCP Widget)
+
+## Current Stage
+- `products.html` remains the runtime shell for MCP delivery.
+- Shared bootstrap moved into:
+  - `scripts/app.js`
+  - `scripts/state.js`
+- Module placeholders wired via `__APP_MODULES_JS__`:
+  - `scripts/api/checkout-pickup-api.js`
+  - `scripts/ui/toast.js`
+  - `scripts/ui/modal.js`
+  - `scripts/ui/custom-select.js`
+  - `scripts/features/cart-page.js`
+  - `scripts/features/cart-core.js`
+  - `scripts/features/phone-input.js`
+  - `scripts/features/address-validation.js`
+  - `scripts/features/products-view.js`
+  - `scripts/features/tool-output-sync.js`
+  - `scripts/features/search-controls.js`
+  - `scripts/features/cart-events.js`
+  - `scripts/features/checkout-events.js`
+  - `scripts/features/map-picker-events.js`
+  - `scripts/features/checkout-flow.js`
+  - `scripts/features/pickup-geo.js`
+  - `scripts/features/courier-calc.js`
+- Map picker feature moved into:
+  - `scripts/features/map-picker.js`
+- Pickup geo feature extraction started:
+  - `ensurePickupGeoLoaded` moved to `scripts/features/pickup-geo.js`
+  - `loadPickupCities` moved to `scripts/features/pickup-geo.js`
+  - `loadPickupPharmacies` moved to `scripts/features/pickup-geo.js`
+  - `extractRegions` moved to `scripts/features/pickup-geo.js`
+  - `extractPharmacies` moved to `scripts/features/pickup-geo.js`
+- Checkout pickup API extraction started:
+  - `checkoutGeoRequest` moved to `scripts/api/checkout-pickup-api.js`
+  - mock payload resolver moved to `scripts/api/checkout-pickup-api.js`
+- Courier calc extraction started:
+  - normalize/render/load/sync cache flow moved to `scripts/features/courier-calc.js`
+- Checkout flow extraction started:
+  - step/panel orchestration (`updateCheckoutSteps`, `updateCheckoutPanels`, `open*Step`) moved to `scripts/features/checkout-flow.js`
+  - checkout entry/exit (`openCheckoutPage`, `returnFromCheckout`) moved to `scripts/features/checkout-flow.js`
+  - payment/transfer controls and validation (`updateCheckoutPaymentControls`, bank-transfer field validation, phone formatting) moved to `scripts/features/checkout-flow.js`
+  - review sync/render (`syncDeliveryType`, `renderCheckoutReviewDeliveryBlock`, `renderCheckoutReview`) moved to `scripts/features/checkout-flow.js`
+- Phone input extraction started:
+  - country picker + phone mask/validation moved to `scripts/features/phone-input.js`
+- Address validation extraction started:
+  - name/email/courier street+house validation moved to `scripts/features/address-validation.js`
+- Custom select extraction started:
+  - region/city trigger/menu state and render logic moved to `scripts/ui/custom-select.js`
+- Toast extraction started:
+  - `showToast` moved to `scripts/ui/toast.js`
+- Modal extraction started:
+  - cart modal open/close behavior moved to `scripts/ui/modal.js`
+- Cart page extraction started:
+  - cart page render/load/open/close/initial-hint moved to `scripts/features/cart-page.js`
+- Cart core extraction started:
+  - cart request/state/apply/render/add/init moved to `scripts/features/cart-core.js`
+- Products view extraction started:
+  - `render` + `initImages` moved to `scripts/features/products-view.js`
+- Tool output sync extraction started:
+  - tool-result normalize/sync/passive polling/message bridge moved to `scripts/features/tool-output-sync.js`
+- Search controls extraction started:
+  - search + price filter state and event bindings moved to `scripts/features/search-controls.js`
+- Cart events extraction started:
+  - cart modal/cart page/product card/counter update handlers moved to `scripts/features/cart-events.js`
+- Checkout events extraction started:
+  - step navigation, address validation, payment/transfer and submit handlers moved to `scripts/features/checkout-events.js`
+- Map picker events extraction started:
+  - map picker open/close/apply/overlay/esc listeners moved to `scripts/features/map-picker-events.js`
+- CSS split started:
+  - `styles/base.css`
+  - `styles/checkout.css`
+  - `styles/map-picker.css`
+
+## Target Folder Structure
+- `products.html` - markup + placeholders only.
+- `styles/` - split CSS by domain.
+- `scripts/app.js` - feature registry + bootstrap.
+- `scripts/state.js` - shared store helpers.
+- `scripts/features/*.js` - feature modules.
+- `scripts/ui/*.js` - shared UI utilities.
+- `scripts/api/*.js` - API clients.
+
+## Migration Map
+- Map picker logic:
+  - from: inline block in `products.html`
+  - to: `scripts/features/map-picker.js`
+- Next extraction candidates:
+  - pickup geo load/filter/raycast helpers -> `scripts/features/pickup-geo.js`
+  - courier calc render/select flow -> `scripts/features/courier-calc.js`
+  - checkout step orchestration -> `scripts/features/checkout-flow.js`
+  - toast/modal/custom-select helpers -> `scripts/ui/`
+
+## MCP Integration Rule
+- Keep one delivered HTML resource (`ui://widget/products.html`).
+- Use placeholders in HTML and fill them in `app/mcp/resources.py`.
+- Do not introduce bundler requirement unless explicitly needed.

@@ -1,0 +1,1 @@
+﻿"""Checkout business rules."""
