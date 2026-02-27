@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
 from app.interfaces.mcp.tools.search_tools import search_products
+from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,11 @@ def _search_products_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     query = str(arguments.get("query", ""))
     limit = int(arguments.get("limit", 10))
     return search_products(query, limit=limit)
+
+
+def _track_order_status_ui_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+    lookup = str(arguments.get("lookup", ""))
+    return track_order_status_ui(lookup)
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
@@ -88,9 +94,18 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
         ),
         "track_order_status_ui": ToolDefinition(
             name="track_order_status_ui",
-            description="Track order status for UI flow.",
-            input_schema={"type": "object"},
-            handler=_not_implemented_tool("track_order_status_ui"),
+            description=(
+                "Track order status by order number or phone. "
+                "For phone input, use full international format with country code first."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "lookup": {"type": "string"},
+                },
+                "required": ["lookup"],
+            },
+            handler=_track_order_status_ui_handler,
         ),
     }
 
