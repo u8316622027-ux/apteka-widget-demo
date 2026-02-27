@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from typing import Any, Callable
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen as default_urlopen
 
 from app.domain.products.entities import ProductSummary
@@ -29,20 +28,27 @@ class AptekaSearchRepository(ProductSearchRepository):
         self._timeout = timeout
         self._urlopen = urlopen
 
-    def search(self, query: str, limit: int = 10) -> list[ProductSummary]:
-        query_string = urlencode({"query": query, "limit": limit})
-        request = Request(url=f"{self._base_url}?{query_string}", method="GET")
+    def search(self, query: str, limit: int | None = None) -> list[ProductSummary]:
+        payload = json.dumps({"query": query}, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        request = Request(
+            url=self._base_url,
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
         with self._urlopen(request, timeout=self._timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            response_payload = json.loads(response.read().decode("utf-8"))
 
-        items = _extract_items(payload)
+        items = _extract_items(response_payload)
         return [_map_product(item) for item in items]
 
 
 def search_products(
     query: str,
     *,
-    limit: int = 10,
+    limit: int | None = None,
     repository: ProductSearchRepository | None = None,
 ) -> dict[str, Any]:
     """Tool entrypoint for product search."""
@@ -53,7 +59,7 @@ def search_products(
     return {
         "query": query.strip(),
         "count": len(products),
-        "products": [asdict(product) for product in products],
+        "products": [_product_to_dict(product) for product in products],
     }
 
 
@@ -82,7 +88,19 @@ def _extract_items(payload: Any) -> list[dict[str, Any]]:
 
 def _map_product(item: dict[str, Any]) -> ProductSummary:
     product_id = str(item.get("id") or item.get("product_id") or item.get("sku") or "")
-    name = str(item.get("name") or item.get("title") or "")
+    fallback_name = str(item.get("name") or item.get("title") or "")
+    translations = item.get("translations") if isinstance(item.get("translations"), dict) else {}
+    ro_translation = translations.get("ro") if isinstance(translations.get("ro"), dict) else {}
+    ru_translation = translations.get("ru") if isinstance(translations.get("ru"), dict) else {}
+    name_ro = ro_translation.get("name")
+    name_ru = ru_translation.get("name")
+    description_ro = ro_translation.get("description")
+    description_ru = ru_translation.get("description")
+    raw_description = item.get("description")
+
+    manufacturer = item.get("manufacturer")
+    international_name = item.get("internationalName") or item.get("international_name")
+    country = item.get("country")
 
     raw_price = item.get("price")
     price: float | None
@@ -94,13 +112,61 @@ def _map_product(item: dict[str, Any]) -> ProductSummary:
         except (TypeError, ValueError):
             price = None
 
-    image_url = item.get("image") or item.get("image_url")
-    product_url = item.get("url") or item.get("product_url")
+    raw_discount_price = item.get("discountPrice") or item.get("discount_price")
+    discount_price: float | None
+    if raw_discount_price is None:
+        discount_price = None
+    else:
+        try:
+            discount_price = float(raw_discount_price)
+        except (TypeError, ValueError):
+            discount_price = None
 
+    image_url = _extract_image_url(item)
     return ProductSummary(
-        product_id=product_id,
-        name=name,
+        id=product_id,
+        name_ro=str(name_ro) if name_ro else (fallback_name or None),
+        name_ru=str(name_ru) if name_ru else (fallback_name or None),
+        manufacturer=str(manufacturer) if manufacturer else None,
+        international_name=str(international_name) if international_name else None,
+        country=str(country) if country else None,
         price=price,
+        discount_price=discount_price,
+        description_ro=str(description_ro) if description_ro else (str(raw_description) if raw_description else None),
+        description_ru=str(description_ru) if description_ru else (str(raw_description) if raw_description else None),
         image_url=str(image_url) if image_url else None,
-        product_url=str(product_url) if product_url else None,
     )
+
+
+def _product_to_dict(product: ProductSummary) -> dict[str, Any]:
+    payload = asdict(product)
+    payload["internationalName"] = payload.pop("international_name")
+    return payload
+
+
+def _extract_image_url(item: dict[str, Any]) -> str | None:
+    direct_candidates = ("image", "image_url", "picture", "photo", "thumbnail")
+    for key in direct_candidates:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+
+    meta = item.get("meta")
+    if isinstance(meta, dict):
+        for key in direct_candidates:
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+
+    images = item.get("images")
+    if isinstance(images, list):
+        for image in images:
+            if isinstance(image, str) and image.strip():
+                return image
+            if isinstance(image, dict):
+                for key in ("full", "preview", "url", "image", "src"):
+                    value = image.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value
+
+    return None

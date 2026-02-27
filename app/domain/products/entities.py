@@ -9,8 +9,14 @@ from dataclasses import dataclass
 class ProductSummary:
     """Simplified product model used by search flows."""
 
-    product_id: str
-    name: str
+    id: str
+    name_ro: str | None
+    name_ru: str | None
+    manufacturer: str | None
+    international_name: str | None
+    country: str | None
     price: float | None
+    discount_price: float | None
+    description_ro: str | None
+    description_ru: str | None
     image_url: str | None
-    product_url: str | None

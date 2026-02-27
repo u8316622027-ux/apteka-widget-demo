@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import unittest
 
 
@@ -15,7 +16,24 @@ def main() -> int:
 
     if known.paths:
         for path in known.paths:
-            suite.addTests(loader.discover(path if path != "." else "tests"))
+            if path == ".":
+                suite.addTests(loader.discover("tests"))
+                continue
+
+            resolved = Path(path)
+            if resolved.is_file():
+                if resolved.is_absolute():
+                    try:
+                        start_dir = str(resolved.parent.relative_to(Path.cwd()))
+                    except ValueError:
+                        start_dir = str(resolved.parent)
+                else:
+                    start_dir = str(resolved.parent) if str(resolved.parent) else "."
+                pattern = resolved.name
+                suite.addTests(loader.discover(start_dir=start_dir, pattern=pattern, top_level_dir="."))
+                continue
+
+            suite.addTests(loader.discover(str(resolved)))
     else:
         suite.addTests(loader.discover("tests"))
 

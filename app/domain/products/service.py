@@ -12,10 +12,10 @@ class ProductSearchService:
     def __init__(self, repository: ProductSearchRepository) -> None:
         self._repository = repository
 
-    def search_products(self, query: str, limit: int = 10) -> list[ProductSummary]:
+    def search_products(self, query: str, limit: int | None = None) -> list[ProductSummary]:
         normalized_query = query.strip()
         if not normalized_query:
             raise ValueError("query must not be empty")
-        if limit < 1:
+        if limit is not None and limit < 1:
             raise ValueError("limit must be greater than zero")
         return self._repository.search(normalized_query, limit=limit)

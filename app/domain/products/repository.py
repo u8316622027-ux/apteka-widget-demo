@@ -10,5 +10,5 @@ from app.domain.products.entities import ProductSummary
 class ProductSearchRepository(Protocol):
     """Abstraction for product search data providers."""
 
-    def search(self, query: str, limit: int = 10) -> list[ProductSummary]:
+    def search(self, query: str, limit: int | None = None) -> list[ProductSummary]:
         """Return product matches for a query."""

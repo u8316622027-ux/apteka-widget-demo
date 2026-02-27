@@ -1,25 +1,45 @@
 ﻿# Feature: products
 
 ## Goal
-TBD
+Отдавать нормализованную карточку товара для интерфейса и MCP tools.
 
 ## User Flow
-TBD
+1. Поиск возвращает список карточек `products[]`.
+2. Клиент использует поля карточки для рендера списка.
 
 ## Inputs/Outputs
-- Inputs: TBD
-- Outputs: TBD
+- Inputs:
+  - Данные от внешнего API аптеки.
+- Outputs:
+  - Поля карточки:
+    - `id`
+    - `name_ro`
+    - `name_ru`
+    - `manufacturer`
+    - `internationalName`
+    - `country`
+    - `price`
+    - `discount_price`
+    - `description_ro`
+    - `description_ru`
+    - `image_url`
 
 ## Dependencies
-TBD
+- Маппинг в `app/interfaces/mcp/tools/search_tools.py`.
+- Сущность `ProductSummary` в `app/domain/products/entities.py`.
 
 ## Edge Cases
-TBD
+- Частично заполненные данные от внешнего API.
+- Отсутствие изображений и переводов.
 
 ## Test Cases
-- Unit: TBD
-- Integration: TBD
-- E2E: TBD
+- Unit:
+  - корректная сборка `ProductSummary`.
+- Integration-like:
+  - маппинг сложного payload `translations/images/price`.
+- E2E:
+  - проверка отображения карточек в UI (пока не реализовано).
 
 ## Tech Debt / Next Improvements
-TBD
+- Уточнить обязательные/необязательные поля карточки.
+- Добавить схемную валидацию ответа перед отправкой в клиент.
