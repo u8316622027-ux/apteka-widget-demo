@@ -130,6 +130,16 @@ class UpstashRestCartTokenStore(CartTokenStore):
         except json.JSONDecodeError:
             return None
 
+        # Some Upstash clients store wrapped payload:
+        # {"value":"{\"access_token\":\"...\",\"token_type\":\"Bearer\"}","ex":604800}
+        if isinstance(token_payload, dict) and isinstance(token_payload.get("value"), str):
+            try:
+                nested_payload = json.loads(str(token_payload["value"]))
+            except json.JSONDecodeError:
+                nested_payload = None
+            if isinstance(nested_payload, dict):
+                token_payload = nested_payload
+
         access_token = str(token_payload.get("access_token") or "").strip()
         token_type = str(token_payload.get("token_type") or "Bearer").strip() or "Bearer"
         if not access_token:
