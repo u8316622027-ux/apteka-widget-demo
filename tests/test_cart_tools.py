@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -163,6 +165,96 @@ class CartToolsTests(unittest.TestCase):
             repository.update_calls[-1],
             ("token-1", [("16174", 1), ("20859", 1)]),
         )
+
+    def test_add_to_my_cart_collapses_duplicate_items_to_last_value(self) -> None:
+        repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        session = my_cart(repository=repository, token_store=token_store)
+
+        payload = add_to_my_cart(
+            items=[
+                {"product_id": "16174", "quantity": 1},
+                {"product_id": "16174", "quantity": 3},
+                {"product_id": "20859", "quantity": 2},
+            ],
+            cart_session_id=str(session["cart_session_id"]),
+            repository=repository,
+            token_store=token_store,
+        )
+
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(
+            repository.update_calls[-1],
+            ("token-1", [("16174", 3), ("20859", 2)]),
+        )
+
+    def test_add_to_my_cart_serializes_batch_updates_per_session(self) -> None:
+        class ConcurrentRepository:
+            def __init__(self) -> None:
+                self._lock = threading.Lock()
+                self.concurrent = 0
+                self.max_concurrent = 0
+                self.state: dict[str, int] = {}
+
+            def create_cart(self) -> CartToken:
+                return CartToken(access_token="token-1", token_type="Bearer")
+
+            def get_cart(self, token: CartToken) -> CartSnapshot:
+                with self._lock:
+                    items = [
+                        CartItem(product_id=product_id, quantity=quantity)
+                        for product_id, quantity in self.state.items()
+                    ]
+                return CartSnapshot(items=items, count=len(items), total=float(len(items)))
+
+            def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
+                with self._lock:
+                    self.state[product_id] = self.state.get(product_id, 0) + quantity
+                return self.get_cart(token)
+
+            def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
+                with self._lock:
+                    self.concurrent += 1
+                    if self.concurrent > self.max_concurrent:
+                        self.max_concurrent = self.concurrent
+                try:
+                    time.sleep(0.03)
+                    with self._lock:
+                        self.state = {product_id: quantity for product_id, quantity in items}
+                finally:
+                    with self._lock:
+                        self.concurrent -= 1
+                return self.get_cart(token)
+
+        repository = ConcurrentRepository()
+        token_store = InMemoryCartTokenStore()
+        session = my_cart(repository=repository, token_store=token_store)
+        session_id = str(session["cart_session_id"])
+        barrier = threading.Barrier(3)
+        errors: list[Exception] = []
+
+        def worker(product_id: str) -> None:
+            try:
+                barrier.wait(timeout=1)
+                add_to_my_cart(
+                    items=[{"product_id": product_id, "quantity": 1}],
+                    cart_session_id=session_id,
+                    repository=repository,
+                    token_store=token_store,
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        thread1 = threading.Thread(target=worker, args=("16174",))
+        thread2 = threading.Thread(target=worker, args=("20859",))
+        thread1.start()
+        thread2.start()
+        barrier.wait(timeout=1)
+        thread1.join(timeout=1)
+        thread2.join(timeout=1)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(repository.max_concurrent, 1)
 
     def test_add_to_my_cart_rejects_negative_quantity(self) -> None:
         repository = FakeCartRepository()
