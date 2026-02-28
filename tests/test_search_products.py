@@ -114,7 +114,7 @@ class ProductSearchTests(unittest.TestCase):
         response = search_products("nurofen", repository=repository, limit=1)
 
         self.assertTrue(requests)
-        self.assertEqual(requests[0]["url"], "https://api.apteka.md/api/v1/front/search")
+        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/search")
         self.assertEqual(requests[0]["method"], "POST")
         self.assertEqual(requests[0]["body"], '{"query":"nurofen"}')
         self.assertEqual(requests[0]["headers"].get("Content-type"), "application/json")

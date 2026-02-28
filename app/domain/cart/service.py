@@ -32,26 +32,62 @@ class CartService:
     def add_to_cart(
         self,
         *,
-        product_id: str,
+        product_id: str | None = None,
         quantity: int | None = None,
+        items: list[tuple[str, int]] | None = None,
         cart_session_id: str | None = None,
     ) -> dict[str, object]:
-        normalized_product_id = product_id.strip()
+        session_id, token, created = self._ensure_session(cart_session_id)
+
+        if items:
+            normalized_updates = self._normalize_items(items)
+            snapshot = self._update_cart_with_merge(token, normalized_updates)
+            return self._response_payload(session_id, created, snapshot)
+
+        normalized_product_id = (product_id or "").strip()
         if not normalized_product_id:
             raise ValueError("product_id must not be empty")
         if quantity is not None and quantity < 0:
             raise ValueError("quantity must be greater than or equal to zero")
 
-        session_id, token, created = self._ensure_session(cart_session_id)
-        if quantity is None:
-            snapshot = self._repository.add_item(token, product_id=normalized_product_id, quantity=1)
+        # Single-item add path always uses /cart/add semantics.
+        add_quantity = 1 if quantity is None else quantity
+        if add_quantity == 0:
+            snapshot = self._update_cart_with_merge(token, [(normalized_product_id, 0)])
         else:
-            snapshot = self._repository.update_item_quantity(
+            snapshot = self._repository.add_item(
                 token,
                 product_id=normalized_product_id,
-                quantity=quantity,
+                quantity=add_quantity,
             )
         return self._response_payload(session_id, created, snapshot)
+
+    def _normalize_items(self, items: list[tuple[str, int]]) -> list[tuple[str, int]]:
+        normalized: list[tuple[str, int]] = []
+        for product_id, quantity in items:
+            normalized_product_id = str(product_id).strip()
+            if not normalized_product_id:
+                raise ValueError("items product_id must not be empty")
+            if quantity < 0:
+                raise ValueError("items quantity must be greater than or equal to zero")
+            normalized.append((normalized_product_id, quantity))
+        return normalized
+
+    def _update_cart_with_merge(
+        self,
+        token: CartToken,
+        updates: list[tuple[str, int]],
+    ) -> CartSnapshot:
+        current = self._repository.get_cart(token)
+        merged: dict[str, int] = {item.product_id: item.quantity for item in current.items}
+        for product_id, quantity in updates:
+            if quantity == 0:
+                merged.pop(product_id, None)
+                continue
+            merged[product_id] = quantity
+
+        merged_items = list(merged.items())
+        return self._repository.update_items(token, items=merged_items)
 
     def _ensure_session(self, cart_session_id: str | None) -> tuple[str, CartToken, bool]:
         normalized_session_id = (cart_session_id or "").strip()

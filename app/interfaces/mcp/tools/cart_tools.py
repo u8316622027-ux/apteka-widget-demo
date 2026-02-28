@@ -15,7 +15,7 @@ from app.domain.cart.repository import CartApiRepository, CartTokenStore
 from app.domain.cart.service import CartService
 from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 
-APTEKA_CART_URL = "https://api.apteka.md/api/v1/front/cart"
+APTEKA_CART_URL = "https://stage.apteka.md/api/v1/front/cart"
 _DEFAULT_TOKEN_STORE: CartTokenStore | None = None
 
 
@@ -233,11 +233,13 @@ class AptekaCartRepository(CartApiRepository):
 
         return self.get_cart(token)
 
-    def update_item_quantity(
-        self, token: CartToken, *, product_id: str, quantity: int
-    ) -> CartSnapshot:
+    def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
+        update_items_payload = [
+            {"product_id": product_id, "quantity": quantity}
+            for product_id, quantity in items
+        ]
         request_payload = json.dumps(
-            {"items": [{"product_id": product_id, "quantity": quantity}], "json": True},
+            {"items": update_items_payload, "json": True},
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
@@ -268,8 +270,9 @@ def my_cart(
 
 def add_to_my_cart(
     *,
-    product_id: str,
+    product_id: str | None = None,
     quantity: int | None = None,
+    items: list[dict[str, object]] | None = None,
     cart_session_id: str | None = None,
     repository: CartApiRepository | None = None,
     token_store: CartTokenStore | None = None,
@@ -277,9 +280,27 @@ def add_to_my_cart(
     """Tool entrypoint that updates cart and returns current snapshot."""
 
     service = _build_cart_service(repository=repository, token_store=token_store)
+    normalized_items: list[tuple[str, int]] | None = None
+    if items:
+        normalized_items = []
+        for raw_item in items:
+            if not isinstance(raw_item, dict):
+                raise ValueError("items must be an array of objects")
+            raw_product_id = raw_item.get("product_id")
+            raw_quantity = raw_item.get("quantity")
+            normalized_product_id = str(raw_product_id or "").strip()
+            if not normalized_product_id:
+                raise ValueError("items product_id must not be empty")
+            try:
+                normalized_quantity = int(raw_quantity)
+            except (TypeError, ValueError):
+                raise ValueError("items quantity must be an integer") from None
+            normalized_items.append((normalized_product_id, normalized_quantity))
+
     return service.add_to_cart(
         product_id=product_id,
         quantity=quantity,
+        items=normalized_items,
         cart_session_id=normalize_cart_session_id(cart_session_id),
     )
 

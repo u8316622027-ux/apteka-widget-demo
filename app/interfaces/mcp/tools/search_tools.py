@@ -11,7 +11,7 @@ from app.domain.products.entities import ProductSummary
 from app.domain.products.repository import ProductSearchRepository
 from app.domain.products.service import ProductSearchService
 
-APTEKA_SEARCH_URL = "https://api.apteka.md/api/v1/front/search"
+APTEKA_SEARCH_URL = "https://stage.apteka.md/api/v1/front/search"
 
 
 class AptekaSearchRepository(ProductSearchRepository):

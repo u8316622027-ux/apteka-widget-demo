@@ -31,7 +31,7 @@
 - `track_order_status_ui` (stub)
 
 ## Search Integration
-- Внешний API: `https://api.apteka.md/api/v1/front/search`
+- Внешний API: `https://stage.apteka.md/api/v1/front/search`
 - Запрос: `POST` JSON body `{"query":"..."}`
 - Ответ маппится в нормализованные карточки товаров.
 

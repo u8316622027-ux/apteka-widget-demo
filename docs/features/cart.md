@@ -29,17 +29,19 @@
   - Output: такой же snapshot как `my_cart`.
 
 ## Tool Behavior Rules (for AI)
-- Если передан только `product_id` (без `quantity`) - добавить 1 единицу товара через `/cart/add`.
-- Если передан `quantity` - это целевое (абсолютное) количество товара в корзине, а не дельта.
-- Пример уменьшения: было `4`, пользователь просит `2` -> отправить `quantity=2` (не `-2`).
-- Полное удаление товара: отправить `quantity=0`.
+- Простое добавление одного товара: передавать только `product_id` (и `cart_session_id`, если есть). Сервер использует `/cart/add`.
+- Массовые изменения (добавить несколько, изменить, удалить): передавать `items=[{product_id, quantity}, ...]`.
+- Для `items[].quantity` используется абсолютное значение:
+  - было `4`, пользователь просит `2` -> отправить `quantity=2` (не `-2`).
+  - `quantity=0` удаляет товар.
+- Сервер перед `/cart/update` сначала читает текущую корзину и делает merge, чтобы не терять позиции, не указанные в `items`.
 
 ## Dependencies
 - Apteka API:
-  - `GET https://api.apteka.md/api/v1/front/cart` (создание корзины + токен)
-  - `GET https://api.apteka.md/api/v1/front/cart` с `Authorization` (получение корзины)
-  - `POST https://api.apteka.md/api/v1/front/cart/add` с `Authorization` и body `{"id":"<product_id>"}` (добавление +1)
-  - `POST https://api.apteka.md/api/v1/front/cart/update` с `Authorization` и body `{"items":[{"product_id":"<product_id>","quantity":<target>}],"json":true}` (установка абсолютного количества, `0` = удалить)
+  - `GET https://stage.apteka.md/api/v1/front/cart` (создание корзины + токен)
+  - `GET https://stage.apteka.md/api/v1/front/cart` с `Authorization` (получение корзины)
+  - `POST https://stage.apteka.md/api/v1/front/cart/add` с `Authorization` и body `{"id":"<product_id>"}` (добавление +1)
+  - `POST https://stage.apteka.md/api/v1/front/cart/update` с `Authorization` и body `{"items":[{"product_id":"<product_id>","quantity":<target>}],"json":true}` (установка абсолютного количества; отправляется merged full-state)
 - Token store:
   - In-memory (по умолчанию)
   - Upstash Redis REST (если заданы `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`)
@@ -59,9 +61,9 @@
 - Unit:
   - автосоздание сессии при отсутствии `cart_session_id`;
   - повторное использование существующей сессии;
-  - валидация `quantity` (`>= 0`);
-  - добавление по умолчанию через `/add` при отсутствии `quantity`;
-  - обновление количества через `/update` при переданном `quantity`, включая `0`.
+  - валидация `quantity` (`>= 0`) и `items[]`;
+  - добавление через `/add` для single-item сценария;
+  - обновление через `/update` для `items[]` c merge текущей корзины, включая удаление при `0`.
 - Integration-like:
   - проверка вызова `GET /front/cart` и парсинга `accessToken/tokenType`;
   - проверка payload для `/front/cart/add`;

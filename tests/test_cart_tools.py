@@ -23,7 +23,7 @@ class FakeCartRepository:
     def __init__(self) -> None:
         self.created_tokens: list[str] = []
         self.add_calls: list[tuple[str, str, int]] = []
-        self.update_calls: list[tuple[str, str, int]] = []
+        self.update_calls: list[tuple[str, list[tuple[str, int]]]] = []
 
     def create_cart(self) -> CartToken:
         token = f"token-{len(self.created_tokens) + 1}"
@@ -34,8 +34,8 @@ class FakeCartRepository:
         quantities: dict[str, int] = {}
         for _, product_id, quantity in self.add_calls:
             quantities[product_id] = quantities.get(product_id, 0) + quantity
-        for _, product_id, quantity in self.update_calls:
-            quantities[product_id] = quantity
+        for _, updates in self.update_calls:
+            quantities = {product_id: quantity for product_id, quantity in updates}
 
         items = [
             CartItem(product_id=product_id, quantity=quantity)
@@ -48,10 +48,8 @@ class FakeCartRepository:
         self.add_calls.append((token.access_token, product_id, quantity))
         return self.get_cart(token)
 
-    def update_item_quantity(
-        self, token: CartToken, *, product_id: str, quantity: int
-    ) -> CartSnapshot:
-        self.update_calls.append((token.access_token, product_id, quantity))
+    def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
+        self.update_calls.append((token.access_token, items))
         return self.get_cart(token)
 
 
@@ -102,7 +100,7 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(repository.add_calls, [("token-1", "A12", 1)])
         self.assertEqual(repository.update_calls, [])
 
-    def test_add_to_my_cart_updates_absolute_quantity_when_quantity_provided(self) -> None:
+    def test_add_to_my_cart_adds_multiple_units_when_quantity_provided(self) -> None:
         repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()
         session = my_cart(repository=repository, token_store=token_store)
@@ -116,8 +114,8 @@ class CartToolsTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["count"], 1)
-        self.assertEqual(repository.add_calls, [])
-        self.assertEqual(repository.update_calls, [("token-1", "17405", 2)])
+        self.assertEqual(repository.add_calls, [("token-1", "17405", 2)])
+        self.assertEqual(repository.update_calls, [])
 
     def test_add_to_my_cart_deletes_item_when_quantity_zero(self) -> None:
         repository = FakeCartRepository()
@@ -140,7 +138,31 @@ class CartToolsTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["items"], [])
-        self.assertEqual(repository.update_calls[-1], ("token-1", "17405", 0))
+        self.assertEqual(repository.update_calls[-1], ("token-1", []))
+
+    def test_add_to_my_cart_updates_items_list_with_merge(self) -> None:
+        repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        session = my_cart(repository=repository, token_store=token_store)
+
+        add_to_my_cart(
+            product_id="16174",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=repository,
+            token_store=token_store,
+        )
+        payload = add_to_my_cart(
+            items=[{"product_id": "20859", "quantity": 1}],
+            cart_session_id=str(session["cart_session_id"]),
+            repository=repository,
+            token_store=token_store,
+        )
+
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(
+            repository.update_calls[-1],
+            ("token-1", [("16174", 1), ("20859", 1)]),
+        )
 
     def test_add_to_my_cart_rejects_negative_quantity(self) -> None:
         repository = FakeCartRepository()
@@ -187,7 +209,7 @@ class CartToolsTests(unittest.TestCase):
 
         self.assertEqual(token.access_token, "token-123")
         self.assertEqual(token.token_type, "Bearer")
-        self.assertEqual(requests[0]["url"], "https://api.apteka.md/api/v1/front/cart")
+        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart")
         self.assertEqual(requests[0]["method"], "GET")
         self.assertNotIn("Authorization", requests[0]["headers"])
 
@@ -226,12 +248,12 @@ class CartToolsTests(unittest.TestCase):
         token = CartToken(access_token="tok-1", token_type="Bearer")
         repository.add_item(token, product_id="17405", quantity=1)
 
-        self.assertEqual(requests[0]["url"], "https://api.apteka.md/api/v1/front/cart/add")
+        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart/add")
         self.assertEqual(requests[0]["method"], "POST")
         self.assertEqual(requests[0]["body"], '{"id":"17405"}')
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer tok-1")
 
-    def test_apteka_repository_update_item_calls_update_endpoint(self) -> None:
+    def test_apteka_repository_update_items_calls_update_endpoint(self) -> None:
         class FakeResponse:
             def __init__(self, payload: bytes) -> None:
                 self._payload = payload
@@ -264,13 +286,13 @@ class CartToolsTests(unittest.TestCase):
 
         repository = AptekaCartRepository(urlopen=fake_urlopen)
         token = CartToken(access_token="tok-1", token_type="Bearer")
-        repository.update_item_quantity(token, product_id="17405", quantity=2)
+        repository.update_items(token, items=[("17405", 2), ("20859", 1)])
 
-        self.assertEqual(requests[0]["url"], "https://api.apteka.md/api/v1/front/cart/update")
+        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart/update")
         self.assertEqual(requests[0]["method"], "POST")
         self.assertEqual(
             requests[0]["body"],
-            '{"items":[{"product_id":"17405","quantity":2}],"json":true}',
+            '{"items":[{"product_id":"17405","quantity":2},{"product_id":"20859","quantity":1}],"json":true}',
         )
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer tok-1")
 
