@@ -13,6 +13,7 @@ from app.domain.faq.service import FaqSearchService
 OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 OPENAI_EMBEDDINGS_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDINGS_DIMENSIONS = 1536
+SUPABASE_FAQ_RPC_FUNCTION = "match_faq_chunks"
 
 
 class OpenAIEmbeddingClient:
@@ -72,15 +73,11 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
         *,
         base_url: str | None = None,
         api_key: str | None = None,
-        rpc_function: str | None = None,
         timeout: float = 10.0,
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
         self._base_url = (base_url or _read_env("SUPABASE_URL")).strip().rstrip("/")
         self._api_key = (api_key or _read_env("SUPABASE_SERVICE_ROLE_KEY")).strip()
-        self._rpc_function = (
-            rpc_function or _read_env("SUPABASE_FAQ_SEARCH_RPC_FUNCTION") or "match_faq_chunks"
-        ).strip()
         self._timeout = timeout
         self._urlopen = urlopen
 
@@ -89,9 +86,6 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
             raise ValueError("SUPABASE_URL is not configured")
         if not self._api_key:
             raise ValueError("SUPABASE_SERVICE_ROLE_KEY is not configured")
-        if not self._rpc_function:
-            raise ValueError("SUPABASE_FAQ_SEARCH_RPC_FUNCTION is not configured")
-
         effective_limit = limit if limit is not None else 5
         payload = json.dumps(
             {
@@ -102,7 +96,7 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
             separators=(",", ":"),
         ).encode("utf-8")
         request = Request(
-            url=f"{self._base_url}/rest/v1/rpc/{self._rpc_function}",
+            url=f"{self._base_url}/rest/v1/rpc/{SUPABASE_FAQ_RPC_FUNCTION}",
             data=payload,
             method="POST",
             headers={

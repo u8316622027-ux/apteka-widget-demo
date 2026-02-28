@@ -26,7 +26,7 @@
   - `OPENAI_API_KEY`
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
-  - `SUPABASE_FAQ_SEARCH_RPC_FUNCTION` (по умолчанию `match_faq_chunks`)
+  - Используется фиксированная RPC-функция `match_faq_chunks`
 
 ## Edge Cases
 - Пустой `query` -> валидационная ошибка.
