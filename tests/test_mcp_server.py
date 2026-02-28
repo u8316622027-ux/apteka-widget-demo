@@ -36,10 +36,10 @@ class MCPServerTests(unittest.TestCase):
             {
                 "add_to_my_cart",
                 "checkout_order",
-                "faq_search",
                 "my_cart",
                 "search_products",
                 "set_widget_theme",
+                "support_knowledge_search",
                 "track_order_status_ui",
             },
         )
@@ -111,6 +111,43 @@ class MCPServerTests(unittest.TestCase):
             )
 
         mocked_tracking.assert_called_once_with("ORD-123")
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+
+    def test_support_knowledge_search_tool_description_mentions_use_cases(self) -> None:
+        registry = create_tool_registry()
+
+        tool = registry["support_knowledge_search"]
+
+        self.assertIn("faq", tool.description.lower())
+        self.assertIn("order", tool.description.lower())
+        self.assertIn("work schedule", tool.description.lower())
+        self.assertIn("app", tool.description.lower())
+
+    def test_tools_call_support_knowledge_search_delegates_to_faq_tool(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.faq_search",
+            return_value={
+                "query": "как оформить заказ",
+                "count": 1,
+                "chunks": [{"id": 10, "text": "Через корзину"}],
+            },
+        ) as mocked_faq_search:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "support_knowledge_search",
+                        "arguments": {"query": "как оформить заказ", "limit": 3},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_faq_search.assert_called_once_with("как оформить заказ", limit=3)
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
 

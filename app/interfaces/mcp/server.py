@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
+from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
 from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
@@ -65,6 +66,13 @@ def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
 def _track_order_status_ui_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     lookup = str(arguments.get("lookup", ""))
     return track_order_status_ui(lookup)
+
+
+def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+    query = str(arguments.get("query", ""))
+    limit_value = arguments.get("limit")
+    limit = int(limit_value) if limit_value is not None else None
+    return faq_search(query, limit=limit)
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
@@ -126,11 +134,21 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             input_schema={"type": "object"},
             handler=_not_implemented_tool("checkout_order"),
         ),
-        "faq_search": ToolDefinition(
-            name="faq_search",
-            description="Search knowledge base frequently asked questions.",
-            input_schema={"type": "object"},
-            handler=_not_implemented_tool("faq_search"),
+        "support_knowledge_search": ToolDefinition(
+            name="support_knowledge_search",
+            description=(
+                "Semantic FAQ knowledge search for support questions: order placement, "
+                "work schedule, app capabilities, payment, delivery, and account usage."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1},
+                },
+                "required": ["query"],
+            },
+            handler=_support_knowledge_search_handler,
         ),
         "my_cart": ToolDefinition(
             name="my_cart",
