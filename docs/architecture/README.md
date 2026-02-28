@@ -31,7 +31,7 @@
 - `my_cart` (реализован)
 - `track_order_status_ui` (реализован)
 - `checkout_order` (stub)
-- `faq_search` (stub)
+- `support_knowledge_search` (implemented: OpenAI embeddings + Supabase vector RPC)
 - `set_widget_theme` (stub)
 
 ## Внешние API

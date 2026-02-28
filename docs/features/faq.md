@@ -1,25 +1,49 @@
-﻿# Feature: faq
+# Feature: faq
 
 ## Goal
-TBD
+Отвечать на вопросы пользователя о работе сервиса (оформление заказа, график, возможности приложения) через семантический поиск по FAQ-чанкам.
 
 ## User Flow
-TBD
+1. Пользователь задает вопрос ассистенту.
+2. LLM выбирает MCP tool `support_knowledge_search` по описанию.
+3. Сервер строит embedding через OpenAI `text-embedding-3-small` (`1536`).
+4. Вектор отправляется в Supabase RPC-функцию для поиска по `faq_chunks`.
+5. Возвращаются релевантные чанки для финального ответа пользователю.
 
 ## Inputs/Outputs
-- Inputs: TBD
-- Outputs: TBD
+- Inputs:
+  - `query: string` - текст вопроса.
+  - `limit?: integer` - максимальное число FAQ-чанков.
+- Outputs:
+  - `query: string` - нормализованный запрос.
+  - `count: integer` - число найденных чанков.
+  - `chunks: array<object>` - найденные чанки из Supabase.
 
 ## Dependencies
-TBD
+- OpenAI Embeddings API (`text-embedding-3-small`).
+- Supabase REST RPC endpoint `/rest/v1/rpc/<function_name>`.
+- Переменные окружения:
+  - `OPENAI_API_KEY`
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_FAQ_SEARCH_RPC_FUNCTION` (по умолчанию `match_faq_chunks`)
 
 ## Edge Cases
-TBD
+- Пустой `query` -> валидационная ошибка.
+- Не настроены ключи/URL -> ошибка конфигурации.
+- Supabase RPC вернул не-массив -> пустой результат.
 
 ## Test Cases
-- Unit: TBD
-- Integration: TBD
-- E2E: TBD
+- Unit:
+  - Валидация пустого запроса.
+  - Проверка формирования payload для OpenAI embeddings.
+  - Проверка payload и headers для Supabase RPC.
+- Integration:
+  - Делегирование из MCP registry в `support_knowledge_search`.
+- E2E:
+  - Smoke через MCP `tools/list` и `tools/call`.
 
 ## Tech Debt / Next Improvements
-TBD
+- Добавить fallback-модель embedding при временной недоступности API.
+- Добавить пост-обработку чанков (дедупликация/порог релевантности).
+- Поддержать фильтры по языку и категории FAQ.

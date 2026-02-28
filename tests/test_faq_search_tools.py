@@ -1,0 +1,111 @@
+"""Tests for FAQ semantic search MCP tool."""
+
+from __future__ import annotations
+
+import json
+import os
+import unittest
+from unittest.mock import patch
+
+from app.interfaces.mcp.tools.faq_tools import (
+    OpenAIEmbeddingClient,
+    SupabaseFaqSearchRepository,
+    faq_search,
+)
+
+
+class FaqSearchToolTests(unittest.TestCase):
+    def test_faq_search_rejects_empty_query(self) -> None:
+        with self.assertRaisesRegex(ValueError, "query must not be empty"):
+            faq_search("   ")
+
+    def test_faq_search_builds_embedding_and_calls_supabase_rpc(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[dict[str, object]] = []
+        responses = [
+            FakeResponse(
+                json.dumps({"data": [{"embedding": [0.11, 0.22, 0.33]}]}).encode("utf-8")
+            ),
+            FakeResponse(
+                json.dumps(
+                    [
+                        {"id": 10, "text": "Оформление заказа через корзину", "score": 0.91},
+                        {"id": 11, "text": "График работы: 08:00-22:00", "score": 0.82},
+                    ]
+                ).encode("utf-8")
+            ),
+        ]
+
+        def fake_urlopen(request, timeout: float):
+            requests.append(
+                {
+                    "url": request.full_url,
+                    "method": request.get_method(),
+                    "headers": dict(request.header_items()),
+                    "body": request.data.decode("utf-8") if request.data else "",
+                    "timeout": timeout,
+                }
+            )
+            return responses.pop(0)
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "test-openai-key",
+                "SUPABASE_URL": "https://demo.supabase.co",
+                "SUPABASE_SERVICE_ROLE_KEY": "test-supabase-key",
+                "SUPABASE_FAQ_SEARCH_RPC_FUNCTION": "match_faq_chunks",
+            },
+            clear=False,
+        ):
+            embedding_client = OpenAIEmbeddingClient(urlopen=fake_urlopen)
+            repository = SupabaseFaqSearchRepository(urlopen=fake_urlopen)
+            response = faq_search(
+                "как оформить заказ",
+                limit=2,
+                embedding_client=embedding_client,
+                repository=repository,
+            )
+
+        self.assertEqual(len(requests), 2)
+
+        self.assertEqual(requests[0]["url"], "https://api.openai.com/v1/embeddings")
+        self.assertEqual(requests[0]["method"], "POST")
+        self.assertEqual(requests[0]["headers"].get("Authorization"), "Bearer test-openai-key")
+        self.assertEqual(requests[0]["headers"].get("Content-type"), "application/json")
+        self.assertEqual(
+            json.loads(str(requests[0]["body"])),
+            {"model": "text-embedding-3-small", "input": "как оформить заказ", "dimensions": 1536},
+        )
+
+        self.assertEqual(
+            requests[1]["url"], "https://demo.supabase.co/rest/v1/rpc/match_faq_chunks"
+        )
+        self.assertEqual(requests[1]["method"], "POST")
+        self.assertEqual(requests[1]["headers"].get("Authorization"), "Bearer test-supabase-key")
+        self.assertEqual(requests[1]["headers"].get("Apikey"), "test-supabase-key")
+        self.assertEqual(requests[1]["headers"].get("Content-type"), "application/json")
+        self.assertEqual(
+            json.loads(str(requests[1]["body"])),
+            {"query_embedding": [0.11, 0.22, 0.33], "match_count": 2},
+        )
+
+        self.assertEqual(response["query"], "как оформить заказ")
+        self.assertEqual(response["count"], 2)
+        self.assertEqual(response["chunks"][0]["id"], 10)
+
+
+if __name__ == "__main__":
+    unittest.main()
