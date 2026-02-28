@@ -46,13 +46,17 @@ def _my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    product_id = str(arguments.get("product_id", ""))
+    product_id_value = arguments.get("product_id")
+    product_id = str(product_id_value) if product_id_value is not None else None
     quantity_value = arguments.get("quantity")
     quantity = int(quantity_value) if quantity_value is not None else None
+    items_value = arguments.get("items")
+    items = items_value if isinstance(items_value, list) else None
     cart_session_id = arguments.get("cart_session_id")
     return add_to_my_cart(
         product_id=product_id,
         quantity=quantity,
+        items=items,
         cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
     )
 
@@ -77,20 +81,36 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
         "add_to_my_cart": ToolDefinition(
             name="add_to_my_cart",
             description=(
-                "Manage cart item by product_id. "
-                "If quantity is omitted, add one item using /cart/add. "
-                "If quantity is provided, set absolute quantity using /cart/update "
-                "(example: 4 -> 2 means set quantity to 2, not minus 2; "
-                "quantity=0 removes item)."
+                "Manage cart with two modes. "
+                "Single add: pass only product_id and optional cart_session_id; "
+                "server uses /cart/add. "
+                "Batch update: pass items=[{product_id,quantity},...], "
+                "where quantity is absolute target and 0 removes item; "
+                "server uses /cart/update."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "product_id": {"type": "string"},
-                    "quantity": {"type": "integer", "minimum": 0},
+                    "quantity": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Deprecated. For single product only; prefer items[].",
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "product_id": {"type": "string"},
+                                "quantity": {"type": "integer", "minimum": 0},
+                            },
+                            "required": ["product_id", "quantity"],
+                        },
+                    },
                     "cart_session_id": {"type": "string"},
                 },
-                "required": ["product_id"],
+                "anyOf": [{"required": ["product_id"]}, {"required": ["items"]}],
             },
             handler=_add_to_my_cart_handler,
         ),

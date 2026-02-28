@@ -29,7 +29,7 @@
     - `image_url`
 
 ## Dependencies
-- Внешний API: `https://api.apteka.md/api/v1/front/search`
+- Внешний API: `https://stage.apteka.md/api/v1/front/search`
 - Метод: `POST`
 - Body: `{"query":"..."}`
 - Токен не используется.

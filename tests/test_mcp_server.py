@@ -131,10 +131,49 @@ class MCPServerTests(unittest.TestCase):
         mocked_add_to_cart.assert_called_once_with(
             product_id="A12",
             quantity=2,
+            items=None,
             cart_session_id="sess-1",
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+
+    def test_tools_call_add_to_my_cart_batch_items_delegates_to_cart_tool(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.add_to_my_cart",
+            return_value={
+                "cart_session_id": "sess-1",
+                "count": 2,
+                "items": [
+                    {"product_id": "16174", "quantity": 1},
+                    {"product_id": "20859", "quantity": 1},
+                ],
+            },
+        ) as mocked_add_to_cart:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 7,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "add_to_my_cart",
+                        "arguments": {
+                            "cart_session_id": "sess-1",
+                            "items": [{"product_id": "20859", "quantity": 1}],
+                        },
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_add_to_cart.assert_called_once_with(
+            product_id=None,
+            quantity=None,
+            items=[{"product_id": "20859", "quantity": 1}],
+            cart_session_id="sess-1",
+        )
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["count"], 2)
 
 
 if __name__ == "__main__":

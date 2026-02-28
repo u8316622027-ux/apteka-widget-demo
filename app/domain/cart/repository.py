@@ -19,10 +19,10 @@ class CartApiRepository(Protocol):
     def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
         """Increment item quantity in cart and return updated snapshot."""
 
-    def update_item_quantity(
-        self, token: CartToken, *, product_id: str, quantity: int
+    def update_items(
+        self, token: CartToken, *, items: list[tuple[str, int]]
     ) -> CartSnapshot:
-        """Set absolute quantity for item and return updated snapshot."""
+        """Apply absolute quantities for provided items and return updated snapshot."""
 
 
 class CartTokenStore(Protocol):
