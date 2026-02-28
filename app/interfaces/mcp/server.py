@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.search_tools import search_products
+from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,11 @@ def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         items=items,
         cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
     )
+
+
+def _track_order_status_ui_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+    lookup = str(arguments.get("lookup", ""))
+    return track_order_status_ui(lookup)
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
@@ -143,9 +149,23 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
         ),
         "track_order_status_ui": ToolDefinition(
             name="track_order_status_ui",
-            description="Track order status for UI flow.",
-            input_schema={"type": "object"},
-            handler=_not_implemented_tool("track_order_status_ui"),
+            description=(
+                "Track order status by order number or phone. "
+                "For phone input, use full international format with country code first. "
+                "If the order was just created and user searches by order number, "
+                "tracking by number becomes available only after operator accepts the order, "
+                "so advise user to wait a bit and try again. "
+                "Use returned status_hint to explain context to user. "
+                "Do not treat packed as ready for pickup until client_notified."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "lookup": {"type": "string"},
+                },
+                "required": ["lookup"],
+            },
+            handler=_track_order_status_ui_handler,
         ),
     }
 

@@ -78,6 +78,42 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("error", response)
         self.assertEqual(response["error"]["code"], -32601)
 
+    def test_track_order_status_tool_description_mentions_supported_inputs(self) -> None:
+        registry = create_tool_registry()
+
+        tool = registry["track_order_status_ui"]
+
+        self.assertIn("order number", tool.description.lower())
+        self.assertIn("phone", tool.description.lower())
+        self.assertIn("country code", tool.description.lower())
+        self.assertIn("operator", tool.description.lower())
+        self.assertIn("wait", tool.description.lower())
+        self.assertIn("status_hint", tool.description.lower())
+        self.assertIn("packed", tool.description.lower())
+
+    def test_tools_call_track_order_status_delegates_to_tracking_tool(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.track_order_status_ui",
+            return_value={"lookup": "ORD-123", "count": 1, "orders": [{"status": "processing"}]},
+        ) as mocked_tracking:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "track_order_status_ui",
+                        "arguments": {"lookup": "ORD-123"},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_tracking.assert_called_once_with("ORD-123")
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+
     def test_tools_call_my_cart_delegates_to_cart_tool(self) -> None:
         registry = create_tool_registry()
         with patch(
@@ -87,7 +123,7 @@ class MCPServerTests(unittest.TestCase):
             response = handle_rpc_request(
                 {
                     "jsonrpc": "2.0",
-                    "id": 5,
+                    "id": 6,
                     "method": "tools/call",
                     "params": {
                         "name": "my_cart",
@@ -114,7 +150,7 @@ class MCPServerTests(unittest.TestCase):
             response = handle_rpc_request(
                 {
                     "jsonrpc": "2.0",
-                    "id": 6,
+                    "id": 7,
                     "method": "tools/call",
                     "params": {
                         "name": "add_to_my_cart",
@@ -153,7 +189,7 @@ class MCPServerTests(unittest.TestCase):
             response = handle_rpc_request(
                 {
                     "jsonrpc": "2.0",
-                    "id": 7,
+                    "id": 8,
                     "method": "tools/call",
                     "params": {
                         "name": "add_to_my_cart",

@@ -1,47 +1,55 @@
-﻿# Architecture
+# Архитектура
 
-## Overview
-Проект построен как минимальный backend для MCP-интеграции с фокусом на инструмент `search_products`.
+## Обзор
+Проект представляет собой минимальный MCP backend с рабочими tool-адаптерами для:
+- `search_products`
+- `add_to_my_cart`
+- `my_cart`
+- `track_order_status_ui`
 
-## Layers
+## Слои
 - `app/domain/*`:
-  - доменные сущности и сервисы (`ProductSummary`, `ProductSearchService`).
+  - доменные сущности и сервисы (`ProductSearchService`, `CartService`, `OrderTrackingService`)
 - `app/core/config.py`:
-  - централизованные settings (env + `.env`) для runtime-конфигурации.
+  - централизованные runtime-настройки (env + `.env`)
 - `app/interfaces/mcp/tools/*`:
-  - MCP tools и адаптеры к внешним API.
+  - MCP tools и адаптеры к внешним API
 - `app/interfaces/mcp/server.py`:
-  - HTTP транспорт для MCP JSON-RPC.
+  - HTTP JSON-RPC транспорт MCP
 
 ## MCP Server
 - Endpoint: `POST /mcp`
 - Healthcheck: `GET /health`
-- Поддержанные методы:
+- Методы:
   - `initialize`
   - `tools/list`
   - `tools/call`
 
-## Registered Tools
+## Зарегистрированные Tools
 - `search_products` (реализован)
-- `add_to_my_cart` (реализован: `/cart/add` + `/cart/update`)
+- `add_to_my_cart` (реализован: single add + batch update merge)
+- `my_cart` (реализован)
+- `track_order_status_ui` (реализован)
 - `checkout_order` (stub)
 - `faq_search` (stub)
-- `my_cart` (реализован)
 - `set_widget_theme` (stub)
-- `track_order_status_ui` (stub)
 
-## Search Integration
-- Внешний API: `https://stage.apteka.md/api/v1/front/search`
-- Запрос: `POST` JSON body `{"query":"..."}`
-- Ответ маппится в нормализованные карточки товаров.
+## Внешние API
+- Поиск:
+  - `https://stage.apteka.md/api/v1/front/search`
+- Корзина:
+  - `https://stage.apteka.md/api/v1/front/cart`
+  - `https://stage.apteka.md/api/v1/front/cart/add`
+  - `https://stage.apteka.md/api/v1/front/cart/update`
+- Трекинг заказа:
+  - `https://stage.apteka.md/api/orders-by-anything/{x}`
 
-## Local Run
+## Локальный запуск
 ```bash
 python -m app.interfaces.mcp.server --host 0.0.0.0 --port 8000
 ```
 
 ## Quality Gates
-Перед завершением задачи запускаются:
 ```bash
 npx biome check --apply .
 python -m ruff format .
