@@ -77,7 +77,13 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
         self._base_url = (base_url or _read_env("SUPABASE_URL")).strip().rstrip("/")
-        self._api_key = (api_key or _read_env("SUPABASE_SERVICE_ROLE_KEY")).strip()
+        self._api_key = (
+            api_key
+            or _read_os_env("SUPABASE_KEY")
+            or _read_os_env("SUPABASE_SERVICE_ROLE_KEY")
+            or _read_env_file_value("SUPABASE_KEY")
+            or _read_env_file_value("SUPABASE_SERVICE_ROLE_KEY")
+        ).strip()
         self._timeout = timeout
         self._urlopen = urlopen
 
@@ -85,7 +91,7 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
         if not self._base_url:
             raise ValueError("SUPABASE_URL is not configured")
         if not self._api_key:
-            raise ValueError("SUPABASE_SERVICE_ROLE_KEY is not configured")
+            raise ValueError("SUPABASE_KEY is not configured")
         effective_limit = limit if limit is not None else 5
         payload = json.dumps(
             {
