@@ -10,6 +10,7 @@ from unittest.mock import patch
 from app.interfaces.mcp.tools.faq_tools import (
     OpenAIEmbeddingClient,
     SupabaseFaqSearchRepository,
+    _read_env,
     faq_search,
 )
 
@@ -70,8 +71,15 @@ class FaqSearchToolTests(unittest.TestCase):
             },
             clear=False,
         ):
-            embedding_client = OpenAIEmbeddingClient(urlopen=fake_urlopen)
-            repository = SupabaseFaqSearchRepository(urlopen=fake_urlopen)
+            embedding_client = OpenAIEmbeddingClient(
+                api_key="test-openai-key",
+                urlopen=fake_urlopen,
+            )
+            repository = SupabaseFaqSearchRepository(
+                base_url="https://demo.supabase.co",
+                api_key="test-supabase-key",
+                urlopen=fake_urlopen,
+            )
             response = faq_search(
                 "как оформить заказ",
                 limit=2,
@@ -140,8 +148,15 @@ class FaqSearchToolTests(unittest.TestCase):
             },
             clear=False,
         ):
-            embedding_client = OpenAIEmbeddingClient(urlopen=fake_urlopen)
-            repository = SupabaseFaqSearchRepository(urlopen=fake_urlopen)
+            embedding_client = OpenAIEmbeddingClient(
+                api_key="test-openai-key",
+                urlopen=fake_urlopen,
+            )
+            repository = SupabaseFaqSearchRepository(
+                base_url="https://demo.supabase.co",
+                api_key="test-supabase-key",
+                urlopen=fake_urlopen,
+            )
             faq_search("график работы", embedding_client=embedding_client, repository=repository)
 
         self.assertEqual(
@@ -192,6 +207,19 @@ class FaqSearchToolTests(unittest.TestCase):
             requests[1]["headers"].get("Authorization"),
             "Bearer test-supabase-key",
         )
+
+    def test_read_env_prefers_dotenv_value_over_process_env(self) -> None:
+        with patch(
+            "app.interfaces.mcp.tools.faq_tools._read_env_file_value",
+            return_value="from-dotenv",
+        ):
+            with patch(
+                "app.interfaces.mcp.tools.faq_tools._read_os_env",
+                return_value="from-process",
+            ):
+                value = _read_env("SUPABASE_KEY")
+
+        self.assertEqual(value, "from-dotenv")
 
 
 if __name__ == "__main__":
