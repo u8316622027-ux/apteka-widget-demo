@@ -14,6 +14,7 @@ OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 OPENAI_EMBEDDINGS_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDINGS_DIMENSIONS = 1536
 SUPABASE_FAQ_RPC_FUNCTION = "match_faq_chunks"
+FAQ_MATCH_COUNT_DEFAULT = 5
 
 
 class OpenAIEmbeddingClient:
@@ -23,10 +24,15 @@ class OpenAIEmbeddingClient:
         self,
         *,
         api_key: str | None = None,
+        dimensions: int | None = None,
         timeout: float = 10.0,
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
         self._api_key = (api_key or _read_env("OPENAI_API_KEY")).strip()
+        self._dimensions = dimensions or _read_positive_int_env(
+            "FAQ_EMBEDDING_DIMENSIONS",
+            OPENAI_EMBEDDINGS_DIMENSIONS,
+        )
         self._timeout = timeout
         self._urlopen = urlopen
 
@@ -38,7 +44,7 @@ class OpenAIEmbeddingClient:
             {
                 "model": OPENAI_EMBEDDINGS_MODEL,
                 "input": text,
-                "dimensions": OPENAI_EMBEDDINGS_DIMENSIONS,
+                "dimensions": self._dimensions,
             },
             ensure_ascii=False,
             separators=(",", ":"),
@@ -73,6 +79,8 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
         *,
         base_url: str | None = None,
         api_key: str | None = None,
+        default_match_count: int | None = None,
+        match_threshold: float | None = None,
         timeout: float = 10.0,
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
@@ -84,6 +92,13 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
             or _read_env_file_value("SUPABASE_KEY")
             or _read_env_file_value("SUPABASE_SERVICE_ROLE_KEY")
         ).strip()
+        self._default_match_count = default_match_count or _read_positive_int_env(
+            "FAQ_MATCH_COUNT_DEFAULT",
+            FAQ_MATCH_COUNT_DEFAULT,
+        )
+        self._match_threshold = (
+            match_threshold if match_threshold is not None else _read_float_env("FAQ_MATCH_THRESHOLD")
+        )
         self._timeout = timeout
         self._urlopen = urlopen
 
@@ -92,15 +107,14 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
             raise ValueError("SUPABASE_URL is not configured")
         if not self._api_key:
             raise ValueError("SUPABASE_KEY is not configured")
-        effective_limit = limit if limit is not None else 5
-        payload = json.dumps(
-            {
-                "query_embedding": query_embedding,
-                "match_count": effective_limit,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode("utf-8")
+        effective_limit = limit if limit is not None else self._default_match_count
+        payload_dict: dict[str, Any] = {
+            "query_embedding": query_embedding,
+            "match_count": effective_limit,
+        }
+        if self._match_threshold is not None:
+            payload_dict["match_threshold"] = self._match_threshold
+        payload = json.dumps(payload_dict, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         request = Request(
             url=f"{self._base_url}/rest/v1/rpc/{SUPABASE_FAQ_RPC_FUNCTION}",
             data=payload,
@@ -158,6 +172,27 @@ def _read_os_env(key: str) -> str:
     import os
 
     return str(os.getenv(key, "")).strip()
+
+
+def _read_positive_int_env(key: str, default: int) -> int:
+    raw_value = _read_env(key)
+    if not raw_value:
+        return default
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _read_float_env(key: str) -> float | None:
+    raw_value = _read_env(key)
+    if not raw_value:
+        return None
+    try:
+        return float(raw_value)
+    except ValueError:
+        return None
 
 
 def _read_env_file_value(key: str) -> str:
