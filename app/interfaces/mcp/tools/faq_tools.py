@@ -146,10 +146,10 @@ def faq_search(
 
 
 def _read_env(key: str) -> str:
-    value = _read_os_env(key).strip()
+    value = _read_env_file_value(key).strip()
     if value:
         return value
-    return _read_env_file_value(key)
+    return _read_os_env(key).strip()
 
 
 def _read_os_env(key: str) -> str:
