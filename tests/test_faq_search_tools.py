@@ -105,6 +105,8 @@ class FaqSearchToolTests(unittest.TestCase):
         self.assertEqual(requests[1]["headers"].get("Authorization"), "Bearer test-supabase-key")
         self.assertEqual(requests[1]["headers"].get("Apikey"), "test-supabase-key")
         self.assertEqual(requests[1]["headers"].get("Content-type"), "application/json")
+        self.assertEqual(requests[1]["headers"].get("Accept"), "application/json")
+        self.assertEqual(requests[1]["headers"].get("User-agent"), "Mozilla/5.0")
         self.assertEqual(
             json.loads(str(requests[1]["body"])),
             {"query_embedding": [0.11, 0.22, 0.33], "match_count": 2},

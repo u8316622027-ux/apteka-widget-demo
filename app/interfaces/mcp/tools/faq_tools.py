@@ -107,6 +107,8 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
             method="POST",
             headers={
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0",
                 "apikey": self._api_key,
                 "Authorization": f"Bearer {self._api_key}",
             },
