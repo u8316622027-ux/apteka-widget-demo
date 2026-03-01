@@ -25,7 +25,8 @@
 - Переменные окружения:
   - `OPENAI_API_KEY`
   - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_KEY` (приоритетно)
+  - `SUPABASE_SERVICE_ROLE_KEY` (fallback для совместимости)
   - Используется фиксированная RPC-функция `match_faq_chunks`
 
 ## Edge Cases

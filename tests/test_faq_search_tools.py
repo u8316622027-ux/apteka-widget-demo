@@ -149,6 +149,50 @@ class FaqSearchToolTests(unittest.TestCase):
             "https://demo.supabase.co/rest/v1/rpc/match_faq_chunks",
         )
 
+    def test_faq_search_uses_supabase_key_env_name(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[dict[str, object]] = []
+        responses = [
+            FakeResponse(json.dumps({"data": [{"embedding": [0.1, 0.2]}]}).encode("utf-8")),
+            FakeResponse(json.dumps([]).encode("utf-8")),
+        ]
+
+        def fake_urlopen(request, timeout: float):
+            requests.append({"headers": dict(request.header_items())})
+            return responses.pop(0)
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "test-openai-key",
+                "SUPABASE_URL": "https://demo.supabase.co",
+                "SUPABASE_KEY": "test-supabase-key",
+                "SUPABASE_SERVICE_ROLE_KEY": "",
+            },
+            clear=False,
+        ):
+            embedding_client = OpenAIEmbeddingClient(urlopen=fake_urlopen)
+            repository = SupabaseFaqSearchRepository(urlopen=fake_urlopen)
+            faq_search("график работы", embedding_client=embedding_client, repository=repository)
+
+        self.assertEqual(requests[1]["headers"].get("Apikey"), "test-supabase-key")
+        self.assertEqual(
+            requests[1]["headers"].get("Authorization"),
+            "Bearer test-supabase-key",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
