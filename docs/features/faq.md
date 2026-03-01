@@ -27,6 +27,9 @@
   - `SUPABASE_URL`
   - `SUPABASE_KEY` (приоритетно)
   - `SUPABASE_SERVICE_ROLE_KEY` (fallback для совместимости)
+  - `FAQ_EMBEDDING_DIMENSIONS` (размер embeddings, по умолчанию `1536`)
+  - `FAQ_MATCH_COUNT_DEFAULT` (число чанков по умолчанию, по умолчанию `10`)
+  - `FAQ_MATCH_THRESHOLD` (порог similarity для RPC-функции)
   - Используется фиксированная RPC-функция `match_faq_chunks`
 
 ## Edge Cases
