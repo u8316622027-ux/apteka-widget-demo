@@ -369,6 +369,33 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["pickup"]["pharmacy"]["id"], 9002)
         self.assertEqual(payload["pickup"]["pickup_window"]["deliveryDate"], "02.03.2026")
 
+    def test_pickup_timeslot_request_uses_selected_pharmacy_item_id(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region Two",
+            pickup_city_name="City 201",
+            pickup_pharmacy_id=9002,
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertIn("pickup_timeslot:9002", reference_repository.calls)
+        self.assertNotIn("pickup_timeslot:2", reference_repository.calls)
+        self.assertNotIn("pickup_timeslot:201", reference_repository.calls)
+
     def test_checkout_reference_repository_calls_all_expected_get_endpoints(self) -> None:
         class FakeResponse:
             def __init__(self, payload: bytes) -> None:
