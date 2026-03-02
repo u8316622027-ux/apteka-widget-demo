@@ -142,6 +142,8 @@ def checkout_order(
     pickup_pharmacy_id: int | str | None = None,
     pickup_pharmacy_name: str | None = None,
     pickup_contact: dict[str, object] | None = None,
+    courier_contact: dict[str, object] | None = None,
+    courier_address: dict[str, object] | None = None,
     payment_method: str | None = None,
     dont_call_me: bool | None = None,
     terms_accepted: bool | None = None,
@@ -199,11 +201,16 @@ def checkout_order(
         }
 
     if delivery_method == "courier_delivery":
-        return {
-            "status": "courier_delivery_not_implemented",
-            "cart_session_id": resolved_session_id,
-            "message": "Курьерскую доставку добавим следующим этапом.",
-        }
+        return _handle_courier_delivery(
+            cart_session_id=resolved_session_id,
+            cart_count=cart_count,
+            cart_payload=cart_payload,
+            reference_data=reference_data,
+            pickup_contact=pickup_contact,
+            courier_contact=courier_contact,
+            courier_address=courier_address,
+            comment=comment,
+        )
 
     if delivery_method != "pickup":
         return {
@@ -484,6 +491,152 @@ def checkout_order(
     }
 
 
+def _handle_courier_delivery(
+    *,
+    cart_session_id: str,
+    cart_count: int,
+    cart_payload: dict[str, object],
+    reference_data: dict[str, list[dict[str, Any]]],
+    pickup_contact: dict[str, object] | None,
+    courier_contact: dict[str, object] | None,
+    courier_address: dict[str, object] | None,
+    comment: str | None,
+) -> dict[str, object]:
+    if courier_address is not None and not isinstance(courier_address, dict):
+        return {
+            "status": "validation_error",
+            "errors": [{"field": "courier_address", "message": "Courier address must be an object"}],
+            "cart_session_id": cart_session_id,
+        }
+
+    if comment is not None and not isinstance(comment, str):
+        return {
+            "status": "validation_error",
+            "errors": [{"field": "comment", "message": "Comment must be text"}],
+            "cart_session_id": cart_session_id,
+        }
+
+    address_payload = courier_address or {}
+    available_regions = _all_regions(reference_data)
+    selected_region = _resolve_option(
+        available_regions,
+        option_id=address_payload.get("region_id"),
+        option_name=str(address_payload.get("region_name") or ""),
+    )
+    if selected_region is None:
+        return {
+            "status": "courier_contact_and_region",
+            "cart_session_id": cart_session_id,
+            "available_regions": _extract_option_names(available_regions),
+            "required_fields": {
+                "first_name": "required|min:3",
+                "last_name": "optional|min:3",
+                "phone": "required|libphonenumber-compatible",
+                "email": "optional|email-validator-compatible",
+            },
+            "required_address_fields": {
+                "region_name": "required",
+                "city_name": "required",
+                "street": "required",
+                "house_number": "required",
+            },
+            "optional_address_fields": ["apartment", "entrance", "floor", "intercom_code"],
+        }
+
+    normalized_region_id = int(selected_region["id"])
+    selected_region_name = str(selected_region["name"])
+    available_cities = _available_courier_cities_for_region(reference_data, normalized_region_id)
+    selected_city = _resolve_option(
+        available_cities,
+        option_id=address_payload.get("city_id"),
+        option_name=str(address_payload.get("city_name") or ""),
+    )
+    if selected_city is None:
+        return {
+            "status": "courier_city_selection",
+            "cart_session_id": cart_session_id,
+            "courier_region_name": selected_region_name,
+            "available_cities": _extract_option_names(available_cities),
+        }
+
+    selected_city_name = str(selected_city["name"])
+    selected_contact = (
+        courier_contact
+        if isinstance(courier_contact, dict)
+        else (pickup_contact if isinstance(pickup_contact, dict) else None)
+    )
+    if selected_contact is None:
+        return {
+            "status": "courier_contact_and_address",
+            "cart_session_id": cart_session_id,
+            "courier": {
+                "region_name": selected_region_name,
+                "city_name": selected_city_name,
+            },
+            "required_fields": {
+                "first_name": "required|min:3",
+                "last_name": "optional|min:3",
+                "phone": "required|libphonenumber-compatible",
+                "email": "optional|email-validator-compatible",
+            },
+            "required_address_fields": {
+                "street": "required",
+                "house_number": "required",
+            },
+            "optional_address_fields": ["apartment", "entrance", "floor", "intercom_code"],
+        }
+
+    normalized_address = _normalize_courier_address(address_payload)
+    errors = [
+        *_validate_pickup_contact(selected_contact),
+        *_validate_courier_address(normalized_address),
+    ]
+    if errors:
+        return {
+            "status": "validation_error",
+            "errors": errors,
+            "cart_session_id": cart_session_id,
+        }
+
+    normalized_contact = {
+        "first_name": str(selected_contact.get("first_name", "")).strip(),
+        "last_name": str(selected_contact.get("last_name", "")).strip(),
+        "phone": str(selected_contact.get("phone", "")).strip(),
+        "email": str(selected_contact.get("email", "")).strip(),
+    }
+    return {
+        "status": "courier_ready_for_submission",
+        "cart_session_id": cart_session_id,
+        "courier": {
+            "region_name": selected_region_name,
+            "city_name": selected_city_name,
+            "contact": normalized_contact,
+            "address": normalized_address,
+            "comment": comment or "",
+        },
+        "checkout_review": {
+            "cart": {
+                "count": cart_count,
+                "total": cart_payload.get("total"),
+                "items": cart_payload.get("items") if isinstance(cart_payload.get("items"), list) else [],
+            },
+            "customer": normalized_contact,
+            "delivery": {
+                "method": "courier_delivery",
+                "region_name": selected_region_name,
+                "city_name": selected_city_name,
+                "street": normalized_address["street"],
+                "house_number": normalized_address["house_number"],
+                "apartment": normalized_address["apartment"],
+                "entrance": normalized_address["entrance"],
+                "floor": normalized_address["floor"],
+                "intercom_code": normalized_address["intercom_code"],
+            },
+            "comment": comment or "",
+        },
+    }
+
+
 def _parse_positive_int(value: int | str | None) -> int | None:
     if value is None:
         return None
@@ -546,6 +699,14 @@ def _available_regions_with_pharmacies(
     ]
 
 
+def _all_regions(reference_data: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    return [
+        _to_display_option(region)
+        for region in reference_data["regions"]
+        if _parse_positive_int(region.get("id")) is not None
+    ]
+
+
 def _available_cities_for_region(
     reference_data: dict[str, list[dict[str, Any]]],
     region_id: int,
@@ -595,6 +756,24 @@ def _available_cities_for_region(
         for city_id in option_order
         if city_id in pharmacy_city_ids
     ]
+
+
+def _available_courier_cities_for_region(
+    reference_data: dict[str, list[dict[str, Any]]],
+    region_id: int,
+) -> list[dict[str, Any]]:
+    cities: list[dict[str, Any]] = []
+    for city in reference_data["cities_without_regions"]:
+        if _parse_positive_int(city.get("region_id")) != region_id:
+            continue
+        city_id = _parse_positive_int(city.get("id"))
+        if city_id is None:
+            continue
+        city_name = _extract_name(city).strip()
+        if not city_name:
+            continue
+        cities.append({"id": city_id, "name": city_name})
+    return cities
 
 
 def _extract_pharmacy_location_name(pharmacy: dict[str, Any], city_id: int) -> str:
@@ -770,6 +949,26 @@ def _validate_pickup_contact(contact: dict[str, object]) -> list[dict[str, str]]
 
     if email and not _is_valid_email(email):
         errors.append({"field": "email", "message": "Email is invalid"})
+    return errors
+
+
+def _normalize_courier_address(address: dict[str, object]) -> dict[str, str]:
+    return {
+        "street": str(address.get("street") or "").strip(),
+        "house_number": str(address.get("house_number") or "").strip(),
+        "apartment": str(address.get("apartment") or "").strip(),
+        "entrance": str(address.get("entrance") or "").strip(),
+        "floor": str(address.get("floor") or "").strip(),
+        "intercom_code": str(address.get("intercom_code") or "").strip(),
+    }
+
+
+def _validate_courier_address(address: dict[str, str]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    if not address["street"]:
+        errors.append({"field": "street", "message": "Street is required"})
+    if not address["house_number"]:
+        errors.append({"field": "house_number", "message": "House number is required"})
     return errors
 
 

@@ -277,6 +277,8 @@ class MCPServerTests(unittest.TestCase):
             pickup_pharmacy_id=None,
             pickup_pharmacy_name=None,
             pickup_contact=None,
+            courier_contact=None,
+            courier_address=None,
             payment_method=None,
             dont_call_me=None,
             terms_accepted=None,
@@ -284,6 +286,14 @@ class MCPServerTests(unittest.TestCase):
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["status"], "delivery_method_selection")
+
+    def test_checkout_order_schema_contains_courier_address_and_contact(self) -> None:
+        registry = create_tool_registry()
+        checkout_tool = registry["checkout_order"]
+        properties = checkout_tool.input_schema["properties"]
+
+        self.assertIn("courier_contact", properties)
+        self.assertIn("courier_address", properties)
 
 
 if __name__ == "__main__":

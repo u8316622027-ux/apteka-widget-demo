@@ -83,3 +83,26 @@
 ## Phone Whitelist
 - Allowed phone metadata is stored in `app/data/allowed_phone_codes.json` (source: user-provided `phones.txt`).
 - Checkout phone validation accepts only numbers matching these `dial_code + min_length/max_length` rules.
+
+## Courier Branch (Implemented)
+1. `courier_contact_and_region`: shows all available regions from `/regions`, plus contact requirements.
+2. `courier_city_selection`: after region selection, shows settlements from `/cities-without-regions` filtered by `region_id`.
+3. `courier_contact_and_address`: asks for contact and delivery address details.
+4. `courier_ready_for_submission`: returns normalized contact + courier address + review payload.
+
+### Courier Address Fields
+- Required:
+  - `region_name` (or `region_id`)
+  - `city_name` (or `city_id`)
+  - `street`
+  - `house_number`
+- Optional:
+  - `apartment`
+  - `entrance`
+  - `floor`
+  - `intercom_code`
+
+### Courier Inputs
+- `courier_contact` (same validation rules as pickup contact)
+- `courier_address`
+- `comment` (unchanged, optional text)

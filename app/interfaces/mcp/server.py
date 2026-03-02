@@ -86,6 +86,8 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     pickup_pharmacy_id = arguments.get("pickup_pharmacy_id")
     pickup_pharmacy_name = arguments.get("pickup_pharmacy_name")
     pickup_contact = arguments.get("pickup_contact")
+    courier_contact = arguments.get("courier_contact")
+    courier_address = arguments.get("courier_address")
     payment_method = arguments.get("payment_method")
     dont_call_me = arguments.get("dont_call_me")
     terms_accepted = arguments.get("terms_accepted")
@@ -100,6 +102,8 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         pickup_pharmacy_id=pickup_pharmacy_id,
         pickup_pharmacy_name=str(pickup_pharmacy_name) if pickup_pharmacy_name is not None else None,
         pickup_contact=pickup_contact if isinstance(pickup_contact, dict) else None,
+        courier_contact=courier_contact if isinstance(courier_contact, dict) else None,
+        courier_address=courier_address if isinstance(courier_address, dict) else None,
         payment_method=str(payment_method) if payment_method is not None else None,
         dont_call_me=bool(dont_call_me) if isinstance(dont_call_me, bool) else None,
         terms_accepted=bool(terms_accepted) if isinstance(terms_accepted, bool) else None,
@@ -185,6 +189,30 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                             "last_name": {"type": "string"},
                             "phone": {"type": "string"},
                             "email": {"type": "string"},
+                        },
+                    },
+                    "courier_contact": {
+                        "type": "object",
+                        "properties": {
+                            "first_name": {"type": "string"},
+                            "last_name": {"type": "string"},
+                            "phone": {"type": "string"},
+                            "email": {"type": "string"},
+                        },
+                    },
+                    "courier_address": {
+                        "type": "object",
+                        "properties": {
+                            "region_id": {"type": "integer", "minimum": 1},
+                            "region_name": {"type": "string"},
+                            "city_id": {"type": "integer", "minimum": 1},
+                            "city_name": {"type": "string"},
+                            "street": {"type": "string"},
+                            "house_number": {"type": "string"},
+                            "apartment": {"type": "string"},
+                            "entrance": {"type": "string"},
+                            "floor": {"type": "string"},
+                            "intercom_code": {"type": "string"},
                         },
                     },
                     "payment_method": {

@@ -627,6 +627,130 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertSetEqual(fields, {"payment_method", "terms_accepted"})
         self.assertEqual(reference_repository.confirm_payloads, [])
 
+    def test_checkout_order_courier_returns_all_regions_before_selection(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="courier_delivery",
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "courier_contact_and_region")
+        self.assertEqual(
+            payload["available_regions"],
+            ["Region One", "Region Two", "Region Without Pharmacies"],
+        )
+
+    def test_checkout_order_courier_region_returns_cities_by_region(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="courier_delivery",
+            courier_address={"region_name": "Region One"},
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "courier_city_selection")
+        self.assertEqual(payload["available_cities"], ["City 101", "City 102"])
+
+    def test_checkout_order_courier_validates_required_address_fields(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="courier_delivery",
+            pickup_contact={"first_name": "Alice", "phone": "+37369111222"},
+            courier_address={
+                "region_name": "Region One",
+                "city_name": "City 101",
+            },
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "validation_error")
+        fields = {error["field"] for error in payload["errors"]}
+        self.assertSetEqual(fields, {"street", "house_number"})
+
+    def test_checkout_order_courier_accepts_valid_contact_and_address(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="courier_delivery",
+            pickup_contact={
+                "first_name": "Alice",
+                "last_name": "Smith",
+                "phone": "+37369111222",
+                "email": "alice@example.com",
+            },
+            courier_address={
+                "region_name": "Region Two",
+                "city_name": "City 201",
+                "street": "Stefan cel Mare",
+                "house_number": "10A",
+                "apartment": "12",
+                "entrance": "2",
+                "floor": "4",
+                "intercom_code": "42",
+            },
+            comment="Leave at door",
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "courier_ready_for_submission")
+        self.assertEqual(payload["courier"]["region_name"], "Region Two")
+        self.assertEqual(payload["courier"]["city_name"], "City 201")
+        self.assertEqual(payload["courier"]["address"]["street"], "Stefan cel Mare")
+        self.assertEqual(payload["courier"]["address"]["house_number"], "10A")
+        self.assertEqual(payload["courier"]["contact"]["first_name"], "Alice")
+        self.assertEqual(payload["courier"]["comment"], "Leave at door")
+
     def test_checkout_order_pickup_submits_confirm_payload(self) -> None:
         cart_repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()
