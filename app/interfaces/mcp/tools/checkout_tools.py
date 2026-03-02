@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Protocol
 from urllib.error import HTTPError
@@ -22,8 +23,11 @@ APTEKA_CONFIRM_ORDER_URL = (
 )
 _CHECKOUT_REFERENCE_CACHE_LOCK = Lock()
 _CHECKOUT_REFERENCE_CACHE: dict[str, list[dict[str, Any]]] | None = None
+_ALLOWED_PHONE_RULES_LOCK = Lock()
+_ALLOWED_PHONE_RULES_CACHE: list[dict[str, Any]] | None = None
 _SIMPLE_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _SIMPLE_PHONE_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
+_NON_DIGITS_PATTERN = re.compile(r"\D+")
 _PAYMENT_METHOD_OPTIONS = [
     {
         "id": "card_on_receipt",
@@ -39,6 +43,7 @@ _PAYMENT_METHOD_OPTIONS = [
     },
 ]
 _PAYMENT_METHOD_IDS = {option["id"] for option in _PAYMENT_METHOD_OPTIONS}
+_ALLOWED_PHONE_CODES_PATH = Path(__file__).resolve().parents[3] / "data" / "allowed_phone_codes.json"
 
 
 class CheckoutReferenceRepository(Protocol):
@@ -769,13 +774,10 @@ def _validate_pickup_contact(contact: dict[str, object]) -> list[dict[str, str]]
 
 
 def _is_valid_phone(phone: str) -> bool:
-    try:
-        import phonenumbers  # type: ignore
-
-        parsed = phonenumbers.parse(phone, None)
-        return bool(phonenumbers.is_valid_number(parsed))
-    except Exception:  # noqa: BLE001
-        return bool(_SIMPLE_PHONE_PATTERN.match(phone))
+    normalized_phone = _normalize_international_phone(phone)
+    if normalized_phone is None or not _SIMPLE_PHONE_PATTERN.match(normalized_phone):
+        return False
+    return _matches_allowed_phone_rule(normalized_phone)
 
 
 def _is_valid_email(email: str) -> bool:
@@ -881,3 +883,42 @@ def _try_parse_json_object(raw_payload: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _normalize_international_phone(phone: str) -> str | None:
+    stripped = str(phone or "").strip()
+    if not stripped.startswith("+"):
+        return None
+    digits_only = _NON_DIGITS_PATTERN.sub("", stripped)
+    if not digits_only:
+        return None
+    return f"+{digits_only}"
+
+
+def _matches_allowed_phone_rule(normalized_phone: str) -> bool:
+    rules = _load_allowed_phone_rules()
+    digits = normalized_phone[1:]
+    for rule in rules:
+        dial_code = str(rule.get("dial_code") or "")
+        if not dial_code or not digits.startswith(dial_code):
+            continue
+        local_length = len(digits) - len(dial_code)
+        min_length = int(rule.get("min_length") or 0)
+        max_length = int(rule.get("max_length") or 0)
+        if min_length <= local_length <= max_length:
+            return True
+    return False
+
+
+def _load_allowed_phone_rules() -> list[dict[str, Any]]:
+    global _ALLOWED_PHONE_RULES_CACHE
+    with _ALLOWED_PHONE_RULES_LOCK:
+        if _ALLOWED_PHONE_RULES_CACHE is None:
+            payload = json.loads(_ALLOWED_PHONE_CODES_PATH.read_text(encoding="utf-8"))
+            parsed = [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
+            _ALLOWED_PHONE_RULES_CACHE = sorted(
+                parsed,
+                key=lambda item: len(str(item.get("dial_code") or "")),
+                reverse=True,
+            )
+        return _ALLOWED_PHONE_RULES_CACHE

@@ -79,3 +79,7 @@
 - Required to submit: `payment_method` and `terms_accepted = true`.
 - Optional: `dont_call_me` (defaults to `false` in confirm payload).
 - Submit endpoint: `POST /api/v1/front/order/confirm-order-by-using-mobile`.
+
+## Phone Whitelist
+- Allowed phone metadata is stored in `app/data/allowed_phone_codes.json` (source: user-provided `phones.txt`).
+- Checkout phone validation accepts only numbers matching these `dial_code + min_length/max_length` rules.

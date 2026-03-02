@@ -463,6 +463,66 @@ class CheckoutToolsTests(unittest.TestCase):
         fields = {error["field"] for error in payload["errors"]}
         self.assertSetEqual(fields, {"first_name", "last_name", "phone", "email"})
 
+    def test_checkout_order_pickup_rejects_phone_with_non_whitelisted_country_code(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region One",
+            pickup_city_name="City 101",
+            pickup_pharmacy_id=9001,
+            pickup_contact={
+                "first_name": "Alice",
+                "phone": "+15551234567",
+            },
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "validation_error")
+        fields = {error["field"] for error in payload["errors"]}
+        self.assertIn("phone", fields)
+
+    def test_checkout_order_pickup_accepts_phone_from_whitelisted_country_code(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region One",
+            pickup_city_name="City 101",
+            pickup_pharmacy_id=9001,
+            pickup_contact={
+                "first_name": "Alice",
+                "phone": "+407123456789",
+            },
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "pickup_confirmation_and_payment")
+
     def test_checkout_order_pickup_rejects_skipping_pharmacy_selection(self) -> None:
         cart_repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()
