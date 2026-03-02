@@ -377,6 +377,59 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["pickup"]["pharmacy_id"], 9001)
         self.assertEqual(payload["pickup_window"]["deliveryDate"], "02.03.2026")
 
+    def test_checkout_order_pickup_accepts_direct_pharmacy_without_city_name(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region Two",
+            pickup_pharmacy_id=9002,
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "pickup_contact")
+        self.assertEqual(payload["pickup"]["pharmacy_id"], 9002)
+        self.assertEqual(payload["pickup"]["city_name"], "City 201")
+
+    def test_checkout_order_pickup_prefers_direct_pharmacy_when_city_name_is_wrong(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region Two",
+            pickup_city_name="Unknown City",
+            pickup_pharmacy_id=9002,
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "pickup_contact")
+        self.assertEqual(payload["pickup"]["pharmacy_id"], 9002)
+        self.assertEqual(payload["pickup"]["city_name"], "City 201")
+
     def test_checkout_order_pickup_validates_contact_fields(self) -> None:
         cart_repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()
@@ -652,7 +705,10 @@ class CheckoutToolsTests(unittest.TestCase):
         repository = AptekaCheckoutReferenceRepository(urlopen=fake_urlopen)
         response = repository.confirm_order_by_mobile({"dontCallMe": False})
 
-        self.assertEqual(response, {"ok": True})
+        self.assertEqual(response["ok"], True)
+        self.assertEqual(response["status_code"], 200)
+        self.assertEqual(response["body"], {"ok": True})
+        self.assertEqual(response["raw_body"], None)
         self.assertEqual(len(requests), 1)
         self.assertEqual(
             requests[0][0],
@@ -660,6 +716,30 @@ class CheckoutToolsTests(unittest.TestCase):
         )
         self.assertEqual(requests[0][1], "POST")
         self.assertEqual(requests[0][2], b'{"dontCallMe":false}')
+
+    def test_checkout_reference_repository_confirm_handles_empty_response_body(self) -> None:
+        class FakeResponse:
+            status = 200
+
+            def read(self) -> bytes:
+                return b""
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            del request, timeout
+            return FakeResponse()
+
+        repository = AptekaCheckoutReferenceRepository(urlopen=fake_urlopen)
+        response = repository.confirm_order_by_mobile({"dontCallMe": False})
+
+        self.assertEqual(response["status_code"], 200)
+        self.assertEqual(response["ok"], True)
+        self.assertEqual(response["body"], None)
 
     def test_city_selection_prefers_sector_id_over_city_id_when_present(self) -> None:
         cart_repository = FakeCartRepository()
