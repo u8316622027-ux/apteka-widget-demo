@@ -267,7 +267,14 @@ class MCPServerTests(unittest.TestCase):
                 registry=registry,
             )
 
-        mocked_checkout.assert_called_once_with(cart_session_id="sess-1")
+        mocked_checkout.assert_called_once_with(
+            cart_session_id="sess-1",
+            delivery_method=None,
+            pickup_region_id=None,
+            pickup_city_id=None,
+            pickup_contact=None,
+            comment=None,
+        )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["status"], "delivery_method_selection")
 
