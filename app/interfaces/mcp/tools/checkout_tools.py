@@ -16,10 +16,28 @@ APTEKA_REGIONS_URL = "https://stage.apteka.md/api/v1/front//regions"
 APTEKA_CITIES_WITHOUT_REGIONS_URL = "https://stage.apteka.md/api/v1/front//cities-without-regions"
 APTEKA_PHARMACIES_URL = "https://stage.apteka.md/api/v1/front//pharmacies/new-list"
 APTEKA_PICKUP_CALCULATE_URL = "https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up"
+APTEKA_CONFIRM_ORDER_URL = (
+    "https://stage.apteka.md/api/v1/front/order/confirm-order-by-using-mobile"
+)
 _CHECKOUT_REFERENCE_CACHE_LOCK = Lock()
 _CHECKOUT_REFERENCE_CACHE: dict[str, list[dict[str, Any]]] | None = None
 _SIMPLE_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _SIMPLE_PHONE_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
+_PAYMENT_METHOD_OPTIONS = [
+    {
+        "id": "card_on_receipt",
+        "title": "Картой при получении",
+    },
+    {
+        "id": "cash_on_receipt",
+        "title": "Наличными при получении",
+    },
+    {
+        "id": "bank_transfer",
+        "title": "Перечислением",
+    },
+]
+_PAYMENT_METHOD_IDS = {option["id"] for option in _PAYMENT_METHOD_OPTIONS}
 
 
 class CheckoutReferenceRepository(Protocol):
@@ -30,6 +48,8 @@ class CheckoutReferenceRepository(Protocol):
     def get_pharmacies(self) -> list[dict[str, Any]]: ...
 
     def get_pickup_timeslot(self, pharmacy_id: int) -> dict[str, Any]: ...
+
+    def confirm_order_by_mobile(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class AptekaCheckoutReferenceRepository:
@@ -65,6 +85,22 @@ class AptekaCheckoutReferenceRepository:
             payload = json.loads(response.read().decode("utf-8"))
         return payload if isinstance(payload, dict) else {}
 
+    def confirm_order_by_mobile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request_payload = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = Request(
+            url=APTEKA_CONFIRM_ORDER_URL,
+            method="POST",
+            data=request_payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with self._urlopen(request, timeout=self._timeout) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+        return response_payload if isinstance(response_payload, dict) else {}
+
     def _load_collection(self, url: str) -> list[dict[str, Any]]:
         request = Request(url=url, method="GET")
         with self._urlopen(request, timeout=self._timeout) as response:
@@ -83,6 +119,9 @@ def checkout_order(
     pickup_pharmacy_id: int | str | None = None,
     pickup_pharmacy_name: str | None = None,
     pickup_contact: dict[str, object] | None = None,
+    payment_method: str | None = None,
+    dont_call_me: bool | None = None,
+    terms_accepted: bool | None = None,
     comment: str | None = None,
     repository: CartApiRepository | None = None,
     token_store: CartTokenStore | None = None,
@@ -290,10 +329,93 @@ def checkout_order(
             "cart_session_id": resolved_session_id,
         }
 
+    normalized_contact = {
+        "first_name": str(pickup_contact.get("first_name", "")).strip(),
+        "last_name": str(pickup_contact.get("last_name", "")).strip(),
+        "phone": str(pickup_contact.get("phone", "")).strip(),
+        "email": str(pickup_contact.get("email", "")).strip(),
+    }
+    review_payload = {
+        "cart": {
+            "count": cart_count,
+            "total": cart_payload.get("total"),
+            "items": cart_payload.get("items") if isinstance(cart_payload.get("items"), list) else [],
+        },
+        "customer": normalized_contact,
+        "delivery": {
+            "method": "pickup",
+            "region_name": selected_region_name,
+            "city_name": selected_city_name,
+            "pharmacy_id": normalized_pharmacy_id,
+            "pharmacy": selected_pharmacy,
+            "delivery_date": pickup_window.get("deliveryDate"),
+            "delivery_from": pickup_window.get("from"),
+            "delivery_to": pickup_window.get("to"),
+            "cancellation_date": pickup_window.get("orderEnd"),
+        },
+        "comment": comment or "",
+    }
+
+    confirmation_started = (
+        payment_method is not None or terms_accepted is not None or dont_call_me is not None
+    )
+    if not confirmation_started:
+        return {
+            "status": "pickup_confirmation_and_payment",
+            "cart_session_id": resolved_session_id,
+            "pickup_window": pickup_window,
+            "pickup": {
+                "region_name": selected_region_name,
+                "city_name": selected_city_name,
+                "pharmacy_id": normalized_pharmacy_id,
+                "pharmacy": selected_pharmacy,
+                "pickup_window": pickup_window,
+                "contact": normalized_contact,
+                "comment": comment or "",
+            },
+            "checkout_review": review_payload,
+            "payment": {
+                "required": True,
+                "options": _PAYMENT_METHOD_OPTIONS,
+            },
+            "required_confirmations": {
+                "dont_call_me": False,
+                "terms_accepted": True,
+                "terms_link": "https://front.apteka.md/ru/news/polizovateliskoe-soglashenie",
+                "pickup_no_call_text": (
+                    "Не звоните мне для подтверждения заказа! Я проверил(а) свой заказ, "
+                    "адрес доставки и приду за заказом после СМС из аптеки"
+                ),
+                "courier_no_call_text": (
+                    "Не звоните мне для подтверждения заказа! Я проверил(а) свой заказ."
+                ),
+            },
+        }
+
+    validation_errors = _validate_confirmation_fields(
+        payment_method=payment_method,
+        terms_accepted=terms_accepted,
+    )
+    if validation_errors:
+        return {
+            "status": "validation_error",
+            "errors": validation_errors,
+            "cart_session_id": resolved_session_id,
+        }
+
+    confirm_payload = _build_pickup_confirm_payload(
+        payment_method=str(payment_method).strip(),
+        dont_call_me=bool(dont_call_me),
+        comment=comment or "",
+        contact=normalized_contact,
+        pickup_window=pickup_window,
+        pharmacy_id=normalized_pharmacy_id,
+    )
+    confirm_response = effective_reference_repository.confirm_order_by_mobile(confirm_payload)
+
     return {
-        "status": "pickup_ready_for_submission",
+        "status": "order_submitted",
         "cart_session_id": resolved_session_id,
-        "submission_mode": "single_payload",
         "pickup_window": pickup_window,
         "pickup": {
             "region_name": selected_region_name,
@@ -301,14 +423,12 @@ def checkout_order(
             "pharmacy_id": normalized_pharmacy_id,
             "pharmacy": selected_pharmacy,
             "pickup_window": pickup_window,
-            "contact": {
-                "first_name": str(pickup_contact.get("first_name", "")).strip(),
-                "last_name": str(pickup_contact.get("last_name", "")).strip(),
-                "phone": str(pickup_contact.get("phone", "")).strip(),
-                "email": str(pickup_contact.get("email", "")).strip(),
-            },
+            "contact": normalized_contact,
             "comment": comment or "",
         },
+        "checkout_review": review_payload,
+        "confirm_request": confirm_payload,
+        "confirm_response": confirm_response,
     }
 
 
@@ -579,6 +699,60 @@ def _is_valid_email(email: str) -> bool:
         return True
     except Exception:  # noqa: BLE001
         return bool(_SIMPLE_EMAIL_PATTERN.match(email))
+
+
+def _validate_confirmation_fields(
+    *,
+    payment_method: str | None,
+    terms_accepted: bool | None,
+) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    normalized_payment_method = str(payment_method or "").strip()
+    if not normalized_payment_method:
+        errors.append({"field": "payment_method", "message": "Payment method is required"})
+    elif normalized_payment_method not in _PAYMENT_METHOD_IDS:
+        errors.append({"field": "payment_method", "message": "Unsupported payment method"})
+
+    if terms_accepted is not True:
+        errors.append(
+            {
+                "field": "terms_accepted",
+                "message": "Terms agreement is required",
+            }
+        )
+    return errors
+
+
+def _build_pickup_confirm_payload(
+    *,
+    payment_method: str,
+    dont_call_me: bool,
+    comment: str,
+    contact: dict[str, str],
+    pickup_window: dict[str, Any],
+    pharmacy_id: int,
+) -> dict[str, object]:
+    return {
+        "orderType": "mobile",
+        "note": comment or None,
+        "dontCallMe": dont_call_me,
+        "delivery": {
+            "firstName": contact["first_name"],
+            "lastName": contact["last_name"] or None,
+            "type": "PICK_UP",
+            "pharmacy_id": pharmacy_id,
+            "phone": contact["phone"],
+            "email": contact["email"] or None,
+            "deliveryWindow": {
+                "deliveryDate": pickup_window.get("deliveryDate"),
+                "from": pickup_window.get("from"),
+                "to": pickup_window.get("to"),
+            },
+        },
+        "payment": {
+            "type": payment_method,
+        },
+    }
 
 
 def _load_cached_checkout_reference_data(

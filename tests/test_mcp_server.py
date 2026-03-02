@@ -277,6 +277,9 @@ class MCPServerTests(unittest.TestCase):
             pickup_pharmacy_id=None,
             pickup_pharmacy_name=None,
             pickup_contact=None,
+            payment_method=None,
+            dont_call_me=None,
+            terms_accepted=None,
             comment=None,
         )
         self.assertFalse(response["result"]["isError"])
