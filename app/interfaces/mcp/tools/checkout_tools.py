@@ -77,7 +77,9 @@ def checkout_order(
     cart_session_id: str | None = None,
     delivery_method: str | None = None,
     pickup_region_id: int | str | None = None,
+    pickup_region_name: str | None = None,
     pickup_city_id: int | str | None = None,
+    pickup_city_name: str | None = None,
     pickup_pharmacy_id: int | str | None = None,
     pickup_contact: dict[str, object] | None = None,
     comment: str | None = None,
@@ -148,11 +150,11 @@ def checkout_order(
         }
 
     available_regions = _available_regions_with_pharmacies(reference_data)
-    if pickup_region_id is None:
+    if pickup_region_id is None and not (pickup_region_name or "").strip():
         return {
             "status": "pickup_contact_and_region",
             "cart_session_id": resolved_session_id,
-            "available_regions": available_regions,
+            "available_regions": _extract_option_names(available_regions),
             "required_fields": {
                 "first_name": "required|min:3",
                 "last_name": "optional|min:3",
@@ -161,38 +163,60 @@ def checkout_order(
             },
         }
 
-    normalized_region_id = _parse_positive_int(pickup_region_id)
-    if normalized_region_id is None or not _contains_id(available_regions, normalized_region_id):
+    selected_region = _resolve_option(
+        available_regions,
+        option_id=pickup_region_id,
+        option_name=pickup_region_name,
+    )
+    if selected_region is None:
         return {
             "status": "validation_error",
-            "errors": [{"field": "pickup_region_id", "message": "Invalid region selection"}],
+            "errors": [
+                {
+                    "field": "pickup_region_name" if (pickup_region_name or "").strip() else "pickup_region_id",
+                    "message": "Invalid region selection",
+                }
+            ],
             "cart_session_id": resolved_session_id,
         }
+    normalized_region_id = int(selected_region["id"])
+    selected_region_name = str(selected_region["name"])
 
     available_cities = _available_cities_for_region(reference_data, normalized_region_id)
-    if pickup_city_id is None:
+    if pickup_city_id is None and not (pickup_city_name or "").strip():
         return {
             "status": "pickup_city_selection",
             "cart_session_id": resolved_session_id,
-            "pickup_region_id": normalized_region_id,
-            "available_cities": available_cities,
+            "pickup_region_name": selected_region_name,
+            "available_cities": _extract_option_names(available_cities),
         }
 
-    normalized_city_id = _parse_positive_int(pickup_city_id)
-    if normalized_city_id is None or not _contains_id(available_cities, normalized_city_id):
+    selected_city = _resolve_option(
+        available_cities,
+        option_id=pickup_city_id,
+        option_name=pickup_city_name,
+    )
+    if selected_city is None:
         return {
             "status": "validation_error",
-            "errors": [{"field": "pickup_city_id", "message": "Invalid city selection"}],
+            "errors": [
+                {
+                    "field": "pickup_city_name" if (pickup_city_name or "").strip() else "pickup_city_id",
+                    "message": "Invalid city selection",
+                }
+            ],
             "cart_session_id": resolved_session_id,
         }
+    normalized_city_id = int(selected_city["id"])
+    selected_city_name = str(selected_city["name"])
 
     available_pharmacies = _available_pharmacies(reference_data, normalized_region_id, normalized_city_id)
     if pickup_pharmacy_id is None:
         return {
             "status": "pickup_pharmacy_selection",
             "cart_session_id": resolved_session_id,
-            "pickup_region_id": normalized_region_id,
-            "pickup_city_id": normalized_city_id,
+            "pickup_region_name": selected_region_name,
+            "pickup_city_name": selected_city_name,
             "available_pharmacies": available_pharmacies,
         }
 
@@ -212,8 +236,8 @@ def checkout_order(
             "status": "pickup_contact",
             "cart_session_id": resolved_session_id,
             "pickup": {
-                "region_id": normalized_region_id,
-                "city_id": normalized_city_id,
+                "region_name": selected_region_name,
+                "city_name": selected_city_name,
                 "pharmacy_id": normalized_pharmacy_id,
                 "pharmacy": selected_pharmacy,
                 "pickup_window": pickup_window,
@@ -246,8 +270,8 @@ def checkout_order(
         "cart_session_id": resolved_session_id,
         "submission_mode": "single_payload",
         "pickup": {
-            "region_id": normalized_region_id,
-            "city_id": normalized_city_id,
+            "region_name": selected_region_name,
+            "city_name": selected_city_name,
             "pharmacy_id": normalized_pharmacy_id,
             "pharmacy": selected_pharmacy,
             "pickup_window": pickup_window,
@@ -274,6 +298,34 @@ def _parse_positive_int(value: int | str | None) -> int | None:
 
 def _contains_id(items: list[dict[str, Any]], item_id: int) -> bool:
     return any(_parse_positive_int(item.get("id")) == item_id for item in items)
+
+
+def _normalize_name(value: str | None) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _extract_option_names(items: list[dict[str, Any]]) -> list[str]:
+    return [str(item.get("name") or "").strip() for item in items if str(item.get("name") or "").strip()]
+
+
+def _resolve_option(
+    items: list[dict[str, Any]],
+    *,
+    option_id: int | str | None,
+    option_name: str | None,
+) -> dict[str, Any] | None:
+    normalized_id = _parse_positive_int(option_id)
+    if normalized_id is not None:
+        for item in items:
+            if _parse_positive_int(item.get("id")) == normalized_id:
+                return item
+
+    normalized_name = _normalize_name(option_name)
+    if normalized_name:
+        for item in items:
+            if _normalize_name(str(item.get("name") or "")) == normalized_name:
+                return item
+    return None
 
 
 def _available_regions_with_pharmacies(

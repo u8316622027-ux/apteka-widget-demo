@@ -192,11 +192,7 @@ class CheckoutToolsTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["status"], "pickup_contact_and_region")
-        region_ids = [region["id"] for region in payload["available_regions"]]
-        self.assertEqual(region_ids, [1, 2])
-        self.assertTrue(
-            all(set(region.keys()) == {"id", "name"} for region in payload["available_regions"])
-        )
+        self.assertEqual(payload["available_regions"], ["Region One", "Region Two"])
 
     def test_checkout_order_pickup_region_returns_cities_with_pharmacies(self) -> None:
         cart_repository = FakeCartRepository()
@@ -213,16 +209,14 @@ class CheckoutToolsTests(unittest.TestCase):
         payload = checkout_order(
             cart_session_id=str(session["cart_session_id"]),
             delivery_method="pickup",
-            pickup_region_id=1,
+            pickup_region_name="Region One",
             repository=cart_repository,
             token_store=token_store,
             reference_repository=reference_repository,
         )
 
         self.assertEqual(payload["status"], "pickup_city_selection")
-        city_ids = [city["id"] for city in payload["available_cities"]]
-        self.assertEqual(city_ids, [101])
-        self.assertTrue(all(set(city.keys()) == {"id", "name"} for city in payload["available_cities"]))
+        self.assertEqual(payload["available_cities"], ["City 101"])
 
     def test_checkout_order_pickup_city_returns_pharmacies(self) -> None:
         cart_repository = FakeCartRepository()
@@ -239,8 +233,8 @@ class CheckoutToolsTests(unittest.TestCase):
         payload = checkout_order(
             cart_session_id=str(session["cart_session_id"]),
             delivery_method="pickup",
-            pickup_region_id=1,
-            pickup_city_id=101,
+            pickup_region_name="Region One",
+            pickup_city_name="City 101",
             repository=cart_repository,
             token_store=token_store,
             reference_repository=reference_repository,
@@ -265,8 +259,8 @@ class CheckoutToolsTests(unittest.TestCase):
         payload = checkout_order(
             cart_session_id=str(session["cart_session_id"]),
             delivery_method="pickup",
-            pickup_region_id=1,
-            pickup_city_id=101,
+            pickup_region_name="Region One",
+            pickup_city_name="City 101",
             pickup_pharmacy_id=9001,
             repository=cart_repository,
             token_store=token_store,
@@ -275,6 +269,8 @@ class CheckoutToolsTests(unittest.TestCase):
 
         self.assertEqual(payload["status"], "pickup_contact")
         self.assertEqual(payload["pickup"]["pharmacy_id"], 9001)
+        self.assertEqual(payload["pickup"]["region_name"], "Region One")
+        self.assertEqual(payload["pickup"]["city_name"], "City 101")
         self.assertEqual(payload["pickup"]["pickup_window"]["deliveryDate"], "02.03.2026")
         self.assertIn("pickup_timeslot:9001", reference_repository.calls)
 
@@ -293,8 +289,8 @@ class CheckoutToolsTests(unittest.TestCase):
         payload = checkout_order(
             cart_session_id=str(session["cart_session_id"]),
             delivery_method="pickup",
-            pickup_region_id=1,
-            pickup_city_id=101,
+            pickup_region_name="Region One",
+            pickup_city_name="City 101",
             pickup_pharmacy_id=9001,
             pickup_contact={
                 "first_name": "Al",
@@ -326,8 +322,8 @@ class CheckoutToolsTests(unittest.TestCase):
         payload = checkout_order(
             cart_session_id=str(session["cart_session_id"]),
             delivery_method="pickup",
-            pickup_region_id=1,
-            pickup_city_id=101,
+            pickup_region_name="Region One",
+            pickup_city_name="City 101",
             pickup_contact={"first_name": "Alice", "phone": "+37369111222"},
             repository=cart_repository,
             token_store=token_store,
@@ -351,8 +347,8 @@ class CheckoutToolsTests(unittest.TestCase):
         payload = checkout_order(
             cart_session_id=str(session["cart_session_id"]),
             delivery_method="pickup",
-            pickup_region_id=2,
-            pickup_city_id=201,
+            pickup_region_name="Region Two",
+            pickup_city_name="City 201",
             pickup_pharmacy_id=9002,
             pickup_contact={
                 "first_name": "Alice",
@@ -367,8 +363,8 @@ class CheckoutToolsTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["status"], "pickup_ready_for_submission")
-        self.assertEqual(payload["pickup"]["region_id"], 2)
-        self.assertEqual(payload["pickup"]["city_id"], 201)
+        self.assertEqual(payload["pickup"]["region_name"], "Region Two")
+        self.assertEqual(payload["pickup"]["city_name"], "City 201")
         self.assertEqual(payload["pickup"]["pharmacy_id"], 9002)
         self.assertEqual(payload["pickup"]["pharmacy"]["id"], 9002)
         self.assertEqual(payload["pickup"]["pickup_window"]["deliveryDate"], "02.03.2026")

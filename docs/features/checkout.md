@@ -1,29 +1,29 @@
 # Feature: checkout
 
 ## Goal
-Guide user through checkout in a strict sequence:
-1. Delivery method.
-2. Personal data + address branch (pickup/courier).
-3. Confirmation + payment (not implemented yet).
+Провести пользователя через оформление заказа по строгой цепочке:
+1. Выбор способа доставки.
+2. Ветвление на заполнение личных данных и адреса (самовывоз/курьер).
+3. Подтверждение и способ оплаты (пока не реализовано).
 
 ## Flow Rules
-1. `checkout_order` always starts with cart check.
-2. If cart is empty: return `cart_empty` and ask to add products.
-3. If cart has items: return `delivery_method_selection`.
-4. User cannot jump directly to later stages without required previous data.
-5. Exception: if user provides multiple required fields in one message, tool skips directly to the first missing step.
+1. `checkout_order` всегда начинается с проверки корзины.
+2. Если корзина пустая: вернуть `cart_empty` и попросить добавить товары.
+3. Если корзина не пустая: вернуть `delivery_method_selection`.
+4. Пользователь не может перейти на поздний этап без заполнения обязательных данных предыдущих шагов.
+5. Исключение: если пользователь в одном сообщении передал несколько обязательных полей, tool пропускает его до первого недостающего шага.
 
 ## Pickup Branch
-1. `pickup_contact_and_region`: show regions with pharmacies.
-2. `pickup_city_selection`: after region selected, show cities with pharmacies.
-3. `pickup_pharmacy_selection`: after city selected, show pharmacies.
-4. `pickup_contact`: after pharmacy selected, load pickup time window.
-5. `pickup_ready_for_submission`: after valid contact details.
+1. `pickup_contact_and_region`: показать регионы, где есть аптеки.
+2. `pickup_city_selection`: после выбора региона показать населенные пункты, где есть аптеки.
+3. `pickup_pharmacy_selection`: после выбора населенного пункта показать доступные аптеки.
+4. `pickup_contact`: после выбора аптеки загрузить окно выдачи заказа.
+5. `pickup_ready_for_submission`: после успешной валидации контактных данных.
 
 ## Pickup Time Window API
 - Endpoint: `GET /api/v1/front/delivery/calculate/pick-up/{pharmacy_id}`
-- Trigger: right after pharmacy selection.
-- Returned payload is exposed as `pickup_window`, for example:
+- Когда вызывается: сразу после выбора аптеки.
+- Что возвращается в tool: `pickup_window`, например:
   - `deliveryDate`
   - `from`
   - `to`
@@ -31,17 +31,17 @@ Guide user through checkout in a strict sequence:
   - `pharmacyClose`
 
 ## Inputs
-- `cart_session_id` (optional)
-- `delivery_method` (`pickup` or `courier_delivery`)
-- `pickup_region_id` (optional)
-- `pickup_city_id` (optional)
-- `pickup_pharmacy_id` (optional)
+- `cart_session_id` (необязательный)
+- `delivery_method` (`pickup` или `courier_delivery`)
+- `pickup_region_id` (необязательный)
+- `pickup_city_id` (необязательный)
+- `pickup_pharmacy_id` (необязательный)
 - `pickup_contact`:
-  - `first_name` required, min 3
-  - `last_name` optional, if provided min 3
-  - `phone` required
-  - `email` optional
-- `comment` optional text
+  - `first_name` обязательно, минимум 3 символа
+  - `last_name` необязательно, но если передано, минимум 3 символа
+  - `phone` обязательно
+  - `email` необязательно
+- `comment` необязательный текст
 
 ## Status Values
 - `cart_empty`
@@ -55,16 +55,16 @@ Guide user through checkout in a strict sequence:
 - `courier_delivery_not_implemented`
 
 ## Data Filtering Rules
-- `available_regions`: only regions where at least one pharmacy exists.
-- `available_cities`: only cities from selected region where at least one pharmacy exists.
-- `available_pharmacies`: only pharmacies for selected `region + city`.
-- Region/city options are returned as display objects only: `{"id", "name"}`.
+- `available_regions`: только регионы, где есть хотя бы одна аптека.
+- `available_cities`: только населенные пункты выбранного региона, где есть хотя бы одна аптека.
+- `available_pharmacies`: только аптеки выбранной пары `region + city`.
+- Варианты региона/населенного пункта возвращаются только в display-формате: `{"id", "name"}`.
 
 ## Validation
-- Name/last name min-length rules.
-- Phone validation: `phonenumbers` when available, regex fallback.
-- Email validation: `email_validator` when available, regex fallback.
+- Имя/фамилия: правила минимальной длины.
+- Телефон: `phonenumbers`, если библиотека доступна, иначе fallback на regex.
+- Email: `email_validator`, если библиотека доступна, иначе fallback на regex.
 
 ## Current Limitations
-- Courier branch is not implemented yet.
-- Country allowlist for phone validation will be added later.
+- Ветка `courier_delivery` пока не реализована.
+- Список разрешенных стран для строгой проверки телефона будет добавлен отдельно.
