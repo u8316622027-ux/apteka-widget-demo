@@ -248,6 +248,29 @@ class MCPServerTests(unittest.TestCase):
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 2)
 
+    def test_tools_call_checkout_order_delegates_to_checkout_tool(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.checkout_order",
+            return_value={"status": "delivery_method_selection", "cart_count": 1},
+        ) as mocked_checkout:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "checkout_order",
+                        "arguments": {"cart_session_id": "sess-1"},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_checkout.assert_called_once_with(cart_session_id="sess-1")
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["status"], "delivery_method_selection")
+
 
 if __name__ == "__main__":
     unittest.main()
