@@ -86,6 +86,9 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     pickup_pharmacy_id = arguments.get("pickup_pharmacy_id")
     pickup_pharmacy_name = arguments.get("pickup_pharmacy_name")
     pickup_contact = arguments.get("pickup_contact")
+    payment_method = arguments.get("payment_method")
+    dont_call_me = arguments.get("dont_call_me")
+    terms_accepted = arguments.get("terms_accepted")
     comment = arguments.get("comment")
     return checkout_order(
         cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
@@ -97,6 +100,9 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         pickup_pharmacy_id=pickup_pharmacy_id,
         pickup_pharmacy_name=str(pickup_pharmacy_name) if pickup_pharmacy_name is not None else None,
         pickup_contact=pickup_contact if isinstance(pickup_contact, dict) else None,
+        payment_method=str(payment_method) if payment_method is not None else None,
+        dont_call_me=bool(dont_call_me) if isinstance(dont_call_me, bool) else None,
+        terms_accepted=bool(terms_accepted) if isinstance(terms_accepted, bool) else None,
         comment=str(comment) if comment is not None else None,
     )
 
@@ -181,6 +187,12 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                             "email": {"type": "string"},
                         },
                     },
+                    "payment_method": {
+                        "type": "string",
+                        "enum": ["card_on_receipt", "cash_on_receipt", "bank_transfer"],
+                    },
+                    "dont_call_me": {"type": "boolean"},
+                    "terms_accepted": {"type": "boolean"},
                     "comment": {"type": "string"},
                 },
             },

@@ -50,6 +50,7 @@ class FakeCartRepository:
 class FakeCheckoutReferenceRepository:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.confirm_payloads: list[dict[str, object]] = []
 
     def get_regions(self) -> list[dict[str, object]]:
         self.calls.append("regions")
@@ -110,6 +111,11 @@ class FakeCheckoutReferenceRepository:
             "orderEnd": "05.03.2026",
             "pharmacyClose": "20:00",
         }
+
+    def confirm_order_by_mobile(self, payload: dict[str, object]) -> dict[str, object]:
+        self.calls.append("confirm_order_by_mobile")
+        self.confirm_payloads.append(payload)
+        return {"order_id": 12345, "status": "accepted"}
 
 
 class CheckoutToolsTests(unittest.TestCase):
@@ -459,12 +465,103 @@ class CheckoutToolsTests(unittest.TestCase):
             reference_repository=reference_repository,
         )
 
-        self.assertEqual(payload["status"], "pickup_ready_for_submission")
+        self.assertEqual(payload["status"], "pickup_confirmation_and_payment")
         self.assertEqual(payload["pickup"]["region_name"], "Region Two")
         self.assertEqual(payload["pickup"]["city_name"], "City 201")
         self.assertEqual(payload["pickup"]["pharmacy_id"], 9002)
         self.assertEqual(payload["pickup"]["pharmacy"]["id"], 9002)
         self.assertEqual(payload["pickup"]["pickup_window"]["deliveryDate"], "02.03.2026")
+        self.assertEqual(payload["payment"]["required"], True)
+        self.assertEqual(payload["required_confirmations"]["terms_accepted"], True)
+        payment_option_ids = [item["id"] for item in payload["payment"]["options"]]
+        self.assertEqual(
+            payment_option_ids,
+            ["card_on_receipt", "cash_on_receipt", "bank_transfer"],
+        )
+
+    def test_checkout_order_pickup_requires_payment_and_terms_for_submission(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region Two",
+            pickup_city_name="City 201",
+            pickup_pharmacy_id=9002,
+            pickup_contact={
+                "first_name": "Alice",
+                "last_name": "Smith",
+                "phone": "+37369111222",
+                "email": "alice@example.com",
+            },
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+            terms_accepted=False,
+        )
+
+        self.assertEqual(payload["status"], "validation_error")
+        fields = {error["field"] for error in payload["errors"]}
+        self.assertSetEqual(fields, {"payment_method", "terms_accepted"})
+        self.assertEqual(reference_repository.confirm_payloads, [])
+
+    def test_checkout_order_pickup_submits_confirm_payload(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+        add_to_my_cart(
+            product_id="17406",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region Two",
+            pickup_city_name="City 201",
+            pickup_pharmacy_id=9002,
+            pickup_contact={
+                "first_name": "Alice",
+                "last_name": "Smith",
+                "phone": "+37369111222",
+                "email": "alice@example.com",
+            },
+            payment_method="cash_on_receipt",
+            dont_call_me=True,
+            terms_accepted=True,
+            comment="No call please",
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "order_submitted")
+        self.assertEqual(payload["confirm_response"]["order_id"], 12345)
+        self.assertEqual(len(reference_repository.confirm_payloads), 1)
+        submitted = reference_repository.confirm_payloads[0]
+        self.assertEqual(submitted["orderType"], "mobile")
+        self.assertEqual(submitted["dontCallMe"], True)
+        self.assertEqual(submitted["payment"]["type"], "cash_on_receipt")
+        self.assertEqual(submitted["delivery"]["type"], "PICK_UP")
+        self.assertEqual(submitted["delivery"]["pharmacy_id"], 9002)
 
     def test_pickup_timeslot_request_uses_selected_pharmacy_item_id(self) -> None:
         cart_repository = FakeCartRepository()
@@ -530,6 +627,39 @@ class CheckoutToolsTests(unittest.TestCase):
                 ("https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up/9001", "GET"),
             ],
         )
+
+    def test_checkout_reference_repository_calls_confirm_endpoint(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[tuple[str, str, bytes]] = []
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            requests.append((request.full_url, request.get_method(), request.data))
+            return FakeResponse(b'{"ok":true}')
+
+        repository = AptekaCheckoutReferenceRepository(urlopen=fake_urlopen)
+        response = repository.confirm_order_by_mobile({"dontCallMe": False})
+
+        self.assertEqual(response, {"ok": True})
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(
+            requests[0][0],
+            "https://stage.apteka.md/api/v1/front/order/confirm-order-by-using-mobile",
+        )
+        self.assertEqual(requests[0][1], "POST")
+        self.assertEqual(requests[0][2], b'{"dontCallMe":false}')
 
     def test_city_selection_prefers_sector_id_over_city_id_when_present(self) -> None:
         cart_repository = FakeCartRepository()

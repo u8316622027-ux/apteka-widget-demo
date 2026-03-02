@@ -73,3 +73,9 @@
 ## Current Limitations
 - Ветка `courier_delivery` пока не реализована.
 - Список разрешенных стран для строгой проверки телефона будет добавлен отдельно.
+
+## Confirmation and Payment (Pickup)
+- After valid `pickup_contact`, tool returns `pickup_confirmation_and_payment` with cart, customer data, pickup delivery date/time and cancellation date (`orderEnd`), payment options, and confirmation checkboxes.
+- Required to submit: `payment_method` and `terms_accepted = true`.
+- Optional: `dont_call_me` (defaults to `false` in confirm payload).
+- Submit endpoint: `POST /api/v1/front/order/confirm-order-by-using-mobile`.
