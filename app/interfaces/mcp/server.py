@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
+from app.interfaces.mcp.tools.checkout_tools import checkout_order
 from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
 from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
@@ -75,6 +76,13 @@ def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, An
     return faq_search(query, limit=limit)
 
 
+def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+    cart_session_id = arguments.get("cart_session_id")
+    return checkout_order(
+        cart_session_id=str(cart_session_id) if cart_session_id is not None else None
+    )
+
+
 def create_tool_registry() -> dict[str, ToolDefinition]:
     """Create the default tool registry for MCP requests."""
 
@@ -130,9 +138,16 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
         ),
         "checkout_order": ToolDefinition(
             name="checkout_order",
-            description="Create order from current cart.",
-            input_schema={"type": "object"},
-            handler=_not_implemented_tool("checkout_order"),
+            description=(
+                "Start checkout flow from current cart. "
+                "If cart is empty, returns a friendly prompt to add products first. "
+                "If cart has items, returns first step with delivery method options."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"cart_session_id": {"type": "string"}},
+            },
+            handler=_checkout_order_handler,
         ),
         "support_knowledge_search": ToolDefinition(
             name="support_knowledge_search",
