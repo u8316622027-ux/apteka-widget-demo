@@ -65,7 +65,6 @@ class FakeCheckoutReferenceRepository:
             {"id": 101, "region_id": 1, "translations": {"ru": {"name": "City 101"}}},
             {"id": 102, "region_id": 1, "translations": {"ru": {"name": "City 102"}}},
             {"id": 201, "region_id": 2, "translations": {"ru": {"name": "City 201"}}},
-            {"id": 202, "region_id": 2, "translations": {"ru": {"name": "Hospital Sector"}}},
         ]
 
     def get_pharmacies(self) -> list[dict[str, object]]:
@@ -89,7 +88,7 @@ class FakeCheckoutReferenceRepository:
                 "city_id": 201,
                 "sector": {
                     "id": 202,
-                    "region_id": 2,
+                    "region_id": 999,
                     "translations": {"ru": {"name": "Hospital Sector"}},
                 },
                 "translations": {"ru": {"name": "Pharmacy 9010"}},

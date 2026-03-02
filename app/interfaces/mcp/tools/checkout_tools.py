@@ -368,19 +368,66 @@ def _available_cities_for_region(
     reference_data: dict[str, list[dict[str, Any]]],
     region_id: int,
 ) -> list[dict[str, Any]]:
-    pharmacy_city_ids = {
-        city_id
-        for city_id in (
-            _extract_pharmacy_city_id(pharmacy, region_id) for pharmacy in reference_data["pharmacies"]
-        )
-        if city_id is not None
-    }
+    option_names_by_id: dict[int, str] = {}
+    option_order: list[int] = []
+
+    for city in reference_data["cities_without_regions"]:
+        if _parse_positive_int(city.get("region_id")) != region_id:
+            continue
+        city_id = _parse_positive_int(city.get("id"))
+        if city_id is None:
+            continue
+        city_name = _extract_name(city).strip()
+        if not city_name:
+            continue
+        if city_id not in option_names_by_id:
+            option_names_by_id[city_id] = city_name
+            option_order.append(city_id)
+
+    pharmacy_city_ids: set[int] = set()
+    for pharmacy in reference_data["pharmacies"]:
+        normalized_region_id = None
+        region_node = pharmacy.get("region")
+        if isinstance(region_node, dict):
+            normalized_region_id = _parse_positive_int(region_node.get("id"))
+        if normalized_region_id is None:
+            normalized_region_id = _parse_positive_int(pharmacy.get("region_id"))
+        if normalized_region_id != region_id:
+            continue
+
+        city_id = _extract_pharmacy_city_id(pharmacy, region_id)
+        if city_id is None:
+            continue
+
+        pharmacy_city_ids.add(city_id)
+        if city_id in option_names_by_id:
+            continue
+
+        fallback_name = _extract_pharmacy_location_name(pharmacy, city_id).strip()
+        if fallback_name:
+            option_names_by_id[city_id] = fallback_name
+            option_order.append(city_id)
+
     return [
-        _to_display_option(city)
-        for city in reference_data["cities_without_regions"]
-        if _parse_positive_int(city.get("region_id")) == region_id
-        and _parse_positive_int(city.get("id")) in pharmacy_city_ids
+        {"id": city_id, "name": option_names_by_id[city_id]}
+        for city_id in option_order
+        if city_id in pharmacy_city_ids
     ]
+
+
+def _extract_pharmacy_location_name(pharmacy: dict[str, Any], city_id: int) -> str:
+    sector_node = pharmacy.get("sector")
+    if isinstance(sector_node, dict):
+        sector_id = _parse_positive_int(sector_node.get("id"))
+        if sector_id == city_id:
+            return _extract_name(sector_node)
+
+    city_node = pharmacy.get("city")
+    if isinstance(city_node, dict):
+        normalized_city_id = _parse_positive_int(city_node.get("id"))
+        if normalized_city_id == city_id:
+            return _extract_name(city_node)
+    return ""
 
 
 def _to_display_option(node: dict[str, Any]) -> dict[str, Any]:
@@ -462,13 +509,12 @@ def _resolve_pharmacy(
 
 
 def _extract_pharmacy_city_id(pharmacy: dict[str, Any], region_id: int) -> int | None:
+    del region_id
     sector_node = pharmacy.get("sector")
     if isinstance(sector_node, dict):
-        sector_region_id = _parse_positive_int(sector_node.get("region_id"))
-        if sector_region_id == region_id:
-            sector_id = _parse_positive_int(sector_node.get("id"))
-            if sector_id is not None:
-                return sector_id
+        sector_id = _parse_positive_int(sector_node.get("id"))
+        if sector_id is not None:
+            return sector_id
 
     city_node = pharmacy.get("city")
     if isinstance(city_node, dict):
