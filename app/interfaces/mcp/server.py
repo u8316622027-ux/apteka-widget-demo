@@ -80,7 +80,9 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     cart_session_id = arguments.get("cart_session_id")
     delivery_method = arguments.get("delivery_method")
     pickup_region_id = arguments.get("pickup_region_id")
+    pickup_region_name = arguments.get("pickup_region_name")
     pickup_city_id = arguments.get("pickup_city_id")
+    pickup_city_name = arguments.get("pickup_city_name")
     pickup_pharmacy_id = arguments.get("pickup_pharmacy_id")
     pickup_contact = arguments.get("pickup_contact")
     comment = arguments.get("comment")
@@ -88,7 +90,9 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
         delivery_method=str(delivery_method) if delivery_method is not None else None,
         pickup_region_id=pickup_region_id,
+        pickup_region_name=str(pickup_region_name) if pickup_region_name is not None else None,
         pickup_city_id=pickup_city_id,
+        pickup_city_name=str(pickup_city_name) if pickup_city_name is not None else None,
         pickup_pharmacy_id=pickup_pharmacy_id,
         pickup_contact=pickup_contact if isinstance(pickup_contact, dict) else None,
         comment=str(comment) if comment is not None else None,
@@ -161,7 +165,9 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                     "cart_session_id": {"type": "string"},
                     "delivery_method": {"type": "string", "enum": ["pickup", "courier_delivery"]},
                     "pickup_region_id": {"type": "integer", "minimum": 1},
+                    "pickup_region_name": {"type": "string"},
                     "pickup_city_id": {"type": "integer", "minimum": 1},
+                    "pickup_city_name": {"type": "string"},
                     "pickup_pharmacy_id": {"type": "integer", "minimum": 1},
                     "pickup_contact": {
                         "type": "object",
