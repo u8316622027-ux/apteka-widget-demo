@@ -65,6 +65,7 @@ class FakeCheckoutReferenceRepository:
             {"id": 101, "region_id": 1, "translations": {"ru": {"name": "City 101"}}},
             {"id": 102, "region_id": 1, "translations": {"ru": {"name": "City 102"}}},
             {"id": 201, "region_id": 2, "translations": {"ru": {"name": "City 201"}}},
+            {"id": 202, "region_id": 2, "translations": {"ru": {"name": "Hospital Sector"}}},
         ]
 
     def get_pharmacies(self) -> list[dict[str, object]]:
@@ -81,6 +82,17 @@ class FakeCheckoutReferenceRepository:
                 "region": {"id": 2},
                 "city_id": 201,
                 "translations": {"ru": {"name": "Pharmacy 9002"}},
+            },
+            {
+                "id": 9010,
+                "region": {"id": 2},
+                "city_id": 201,
+                "sector": {
+                    "id": 202,
+                    "region_id": 2,
+                    "translations": {"ru": {"name": "Hospital Sector"}},
+                },
+                "translations": {"ru": {"name": "Pharmacy 9010"}},
             },
         ]
 
@@ -272,7 +284,35 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["pickup"]["region_name"], "Region One")
         self.assertEqual(payload["pickup"]["city_name"], "City 101")
         self.assertEqual(payload["pickup"]["pickup_window"]["deliveryDate"], "02.03.2026")
+        self.assertEqual(payload["pickup_window"]["deliveryDate"], "02.03.2026")
         self.assertIn("pickup_timeslot:9001", reference_repository.calls)
+
+    def test_checkout_order_pickup_accepts_pharmacy_name_selection(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region One",
+            pickup_city_name="City 101",
+            pickup_pharmacy_name="Pharmacy 9001",
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "pickup_contact")
+        self.assertEqual(payload["pickup"]["pharmacy_id"], 9001)
+        self.assertEqual(payload["pickup_window"]["deliveryDate"], "02.03.2026")
 
     def test_checkout_order_pickup_validates_contact_fields(self) -> None:
         cart_repository = FakeCartRepository()
@@ -433,6 +473,30 @@ class CheckoutToolsTests(unittest.TestCase):
                 ("https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up/9001", "GET"),
             ],
         )
+
+    def test_city_selection_prefers_sector_id_over_city_id_when_present(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_name="Region Two",
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "pickup_city_selection")
+        self.assertEqual(payload["available_cities"], ["City 201", "Hospital Sector"])
 
 
 if __name__ == "__main__":

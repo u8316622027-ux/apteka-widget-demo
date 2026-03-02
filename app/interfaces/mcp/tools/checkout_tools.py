@@ -81,6 +81,7 @@ def checkout_order(
     pickup_city_id: int | str | None = None,
     pickup_city_name: str | None = None,
     pickup_pharmacy_id: int | str | None = None,
+    pickup_pharmacy_name: str | None = None,
     pickup_contact: dict[str, object] | None = None,
     comment: str | None = None,
     repository: CartApiRepository | None = None,
@@ -211,7 +212,7 @@ def checkout_order(
     selected_city_name = str(selected_city["name"])
 
     available_pharmacies = _available_pharmacies(reference_data, normalized_region_id, normalized_city_id)
-    if pickup_pharmacy_id is None:
+    if pickup_pharmacy_id is None and not (pickup_pharmacy_name or "").strip():
         return {
             "status": "pickup_pharmacy_selection",
             "cart_session_id": resolved_session_id,
@@ -220,12 +221,25 @@ def checkout_order(
             "available_pharmacies": available_pharmacies,
         }
 
-    normalized_pharmacy_id = _parse_positive_int(pickup_pharmacy_id)
-    selected_pharmacy = _find_pharmacy(available_pharmacies, normalized_pharmacy_id)
-    if normalized_pharmacy_id is None or selected_pharmacy is None:
+    selected_pharmacy = _resolve_pharmacy(
+        available_pharmacies,
+        pharmacy_id=pickup_pharmacy_id,
+        pharmacy_name=pickup_pharmacy_name,
+    )
+    normalized_pharmacy_id = (
+        _parse_positive_int(selected_pharmacy.get("id")) if isinstance(selected_pharmacy, dict) else None
+    )
+    if normalized_pharmacy_id is None:
         return {
             "status": "validation_error",
-            "errors": [{"field": "pickup_pharmacy_id", "message": "Invalid pharmacy selection"}],
+            "errors": [
+                {
+                    "field": "pickup_pharmacy_name"
+                    if (pickup_pharmacy_name or "").strip()
+                    else "pickup_pharmacy_id",
+                    "message": "Invalid pharmacy selection",
+                }
+            ],
             "cart_session_id": resolved_session_id,
         }
 
@@ -235,6 +249,7 @@ def checkout_order(
         return {
             "status": "pickup_contact",
             "cart_session_id": resolved_session_id,
+            "pickup_window": pickup_window,
             "pickup": {
                 "region_name": selected_region_name,
                 "city_name": selected_city_name,
@@ -269,6 +284,7 @@ def checkout_order(
         "status": "pickup_ready_for_submission",
         "cart_session_id": resolved_session_id,
         "submission_mode": "single_payload",
+        "pickup_window": pickup_window,
         "pickup": {
             "region_name": selected_region_name,
             "city_name": selected_city_name,
@@ -425,7 +441,35 @@ def _find_pharmacy(
     return None
 
 
+def _resolve_pharmacy(
+    pharmacies: list[dict[str, Any]],
+    *,
+    pharmacy_id: int | str | None,
+    pharmacy_name: str | None,
+) -> dict[str, Any] | None:
+    normalized_id = _parse_positive_int(pharmacy_id)
+    by_id = _find_pharmacy(pharmacies, normalized_id)
+    if by_id is not None:
+        return by_id
+
+    normalized_name = _normalize_name(pharmacy_name)
+    if not normalized_name:
+        return None
+    for pharmacy in pharmacies:
+        if _normalize_name(_extract_name(pharmacy)) == normalized_name:
+            return pharmacy
+    return None
+
+
 def _extract_pharmacy_city_id(pharmacy: dict[str, Any], region_id: int) -> int | None:
+    sector_node = pharmacy.get("sector")
+    if isinstance(sector_node, dict):
+        sector_region_id = _parse_positive_int(sector_node.get("region_id"))
+        if sector_region_id == region_id:
+            sector_id = _parse_positive_int(sector_node.get("id"))
+            if sector_id is not None:
+                return sector_id
+
     city_node = pharmacy.get("city")
     if isinstance(city_node, dict):
         city_id = _parse_positive_int(city_node.get("id"))
@@ -437,13 +481,6 @@ def _extract_pharmacy_city_id(pharmacy: dict[str, Any], region_id: int) -> int |
         if city_id is not None:
             return city_id
 
-    sector_node = pharmacy.get("sector")
-    if isinstance(sector_node, dict):
-        sector_region_id = _parse_positive_int(sector_node.get("region_id"))
-        if sector_region_id == region_id:
-            sector_id = _parse_positive_int(sector_node.get("id"))
-            if sector_id is not None:
-                return sector_id
     return None
 
 

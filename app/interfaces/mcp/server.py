@@ -84,6 +84,7 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     pickup_city_id = arguments.get("pickup_city_id")
     pickup_city_name = arguments.get("pickup_city_name")
     pickup_pharmacy_id = arguments.get("pickup_pharmacy_id")
+    pickup_pharmacy_name = arguments.get("pickup_pharmacy_name")
     pickup_contact = arguments.get("pickup_contact")
     comment = arguments.get("comment")
     return checkout_order(
@@ -94,6 +95,7 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         pickup_city_id=pickup_city_id,
         pickup_city_name=str(pickup_city_name) if pickup_city_name is not None else None,
         pickup_pharmacy_id=pickup_pharmacy_id,
+        pickup_pharmacy_name=str(pickup_pharmacy_name) if pickup_pharmacy_name is not None else None,
         pickup_contact=pickup_contact if isinstance(pickup_contact, dict) else None,
         comment=str(comment) if comment is not None else None,
     )
@@ -169,6 +171,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                     "pickup_city_id": {"type": "integer", "minimum": 1},
                     "pickup_city_name": {"type": "string"},
                     "pickup_pharmacy_id": {"type": "integer", "minimum": 1},
+                    "pickup_pharmacy_name": {"type": "string"},
                     "pickup_contact": {
                         "type": "object",
                         "properties": {
