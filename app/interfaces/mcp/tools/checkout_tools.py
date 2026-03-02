@@ -249,7 +249,7 @@ def _available_regions_with_pharmacies(
             region_ids_with_pharmacies.add(region_id)
 
     return [
-        region
+        _to_display_option(region)
         for region in reference_data["regions"]
         if _parse_positive_int(region.get("id")) in region_ids_with_pharmacies
     ]
@@ -267,11 +267,34 @@ def _available_cities_for_region(
         if city_id is not None
     }
     return [
-        city
+        _to_display_option(city)
         for city in reference_data["cities_without_regions"]
         if _parse_positive_int(city.get("region_id")) == region_id
         and _parse_positive_int(city.get("id")) in pharmacy_city_ids
     ]
+
+
+def _to_display_option(node: dict[str, Any]) -> dict[str, Any]:
+    item_id = _parse_positive_int(node.get("id"))
+    if item_id is None:
+        item_id = 0
+    return {"id": item_id, "name": _extract_name(node)}
+
+
+def _extract_name(node: dict[str, Any]) -> str:
+    translations = node.get("translations")
+    if isinstance(translations, dict):
+        ru = translations.get("ru")
+        if isinstance(ru, dict):
+            ru_name = str(ru.get("name") or "").strip()
+            if ru_name:
+                return ru_name
+        ro = translations.get("ro")
+        if isinstance(ro, dict):
+            ro_name = str(ro.get("name") or "").strip()
+            if ro_name:
+                return ro_name
+    return str(node.get("name") or "").strip()
 
 
 def _available_pharmacies(

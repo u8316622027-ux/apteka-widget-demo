@@ -185,6 +185,8 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["status"], "pickup_contact_and_region")
         region_ids = [region["id"] for region in payload["available_regions"]]
         self.assertEqual(region_ids, [1, 2])
+        self.assertTrue(all(set(region.keys()) == {"id", "name"} for region in payload["available_regions"]))
+        self.assertTrue(all(isinstance(region["name"], str) and region["name"] for region in payload["available_regions"]))
 
     def test_checkout_order_pickup_region_returns_cities_with_pharmacies(self) -> None:
         cart_repository = FakeCartRepository()
@@ -210,6 +212,8 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["status"], "pickup_city_selection")
         city_ids = [city["id"] for city in payload["available_cities"]]
         self.assertEqual(city_ids, [101])
+        self.assertTrue(all(set(city.keys()) == {"id", "name"} for city in payload["available_cities"]))
+        self.assertTrue(all(isinstance(city["name"], str) and city["name"] for city in payload["available_cities"]))
 
     def test_checkout_order_pickup_city_returns_pharmacies(self) -> None:
         cart_repository = FakeCartRepository()
