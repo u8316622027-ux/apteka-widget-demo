@@ -184,19 +184,24 @@ def checkout_order(
     selected_region_name = str(selected_region["name"])
 
     available_cities = _available_cities_for_region(reference_data, normalized_region_id)
+    selected_city: dict[str, Any] | None = None
     if pickup_city_id is None and not (pickup_city_name or "").strip():
-        return {
-            "status": "pickup_city_selection",
-            "cart_session_id": resolved_session_id,
-            "pickup_region_name": selected_region_name,
-            "available_cities": _extract_option_names(available_cities),
-        }
+        if len(available_cities) == 1:
+            selected_city = available_cities[0]
+        else:
+            return {
+                "status": "pickup_city_selection",
+                "cart_session_id": resolved_session_id,
+                "pickup_region_name": selected_region_name,
+                "available_cities": _extract_option_names(available_cities),
+            }
+    else:
+        selected_city = _resolve_option(
+            available_cities,
+            option_id=pickup_city_id,
+            option_name=pickup_city_name,
+        )
 
-    selected_city = _resolve_option(
-        available_cities,
-        option_id=pickup_city_id,
-        option_name=pickup_city_name,
-    )
     if selected_city is None:
         return {
             "status": "validation_error",
@@ -212,20 +217,25 @@ def checkout_order(
     selected_city_name = str(selected_city["name"])
 
     available_pharmacies = _available_pharmacies(reference_data, normalized_region_id, normalized_city_id)
+    selected_pharmacy: dict[str, Any] | None = None
     if pickup_pharmacy_id is None and not (pickup_pharmacy_name or "").strip():
-        return {
-            "status": "pickup_pharmacy_selection",
-            "cart_session_id": resolved_session_id,
-            "pickup_region_name": selected_region_name,
-            "pickup_city_name": selected_city_name,
-            "available_pharmacies": available_pharmacies,
-        }
+        if len(available_pharmacies) == 1:
+            selected_pharmacy = available_pharmacies[0]
+        else:
+            return {
+                "status": "pickup_pharmacy_selection",
+                "cart_session_id": resolved_session_id,
+                "pickup_region_name": selected_region_name,
+                "pickup_city_name": selected_city_name,
+                "available_pharmacies": available_pharmacies,
+            }
+    else:
+        selected_pharmacy = _resolve_pharmacy(
+            available_pharmacies,
+            pharmacy_id=pickup_pharmacy_id,
+            pharmacy_name=pickup_pharmacy_name,
+        )
 
-    selected_pharmacy = _resolve_pharmacy(
-        available_pharmacies,
-        pharmacy_id=pickup_pharmacy_id,
-        pharmacy_name=pickup_pharmacy_name,
-    )
     normalized_pharmacy_id = (
         _parse_positive_int(selected_pharmacy.get("id")) if isinstance(selected_pharmacy, dict) else None
     )
