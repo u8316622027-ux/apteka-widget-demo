@@ -272,6 +272,7 @@ class MCPServerTests(unittest.TestCase):
             delivery_method=None,
             pickup_region_id=None,
             pickup_city_id=None,
+            pickup_pharmacy_id=None,
             pickup_contact=None,
             comment=None,
         )

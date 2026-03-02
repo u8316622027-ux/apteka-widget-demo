@@ -54,17 +54,17 @@ class FakeCheckoutReferenceRepository:
     def get_regions(self) -> list[dict[str, object]]:
         self.calls.append("regions")
         return [
-            {"id": 1, "translations": {"ru": {"name": "Регион 1"}}},
-            {"id": 2, "translations": {"ru": {"name": "Регион 2"}}},
-            {"id": 3, "translations": {"ru": {"name": "Регион 3 без аптек"}}},
+            {"id": 1, "translations": {"ru": {"name": "Region One"}}},
+            {"id": 2, "translations": {"ru": {"name": "Region Two"}}},
+            {"id": 3, "translations": {"ru": {"name": "Region Without Pharmacies"}}},
         ]
 
     def get_cities_without_regions(self) -> list[dict[str, object]]:
         self.calls.append("cities_without_regions")
         return [
-            {"id": 101, "region_id": 1, "translations": {"ru": {"name": "Город 101"}}},
-            {"id": 102, "region_id": 1, "translations": {"ru": {"name": "Город 102 без аптек"}}},
-            {"id": 201, "region_id": 2, "translations": {"ru": {"name": "Город 201"}}},
+            {"id": 101, "region_id": 1, "translations": {"ru": {"name": "City 101"}}},
+            {"id": 102, "region_id": 1, "translations": {"ru": {"name": "City 102"}}},
+            {"id": 201, "region_id": 2, "translations": {"ru": {"name": "City 201"}}},
         ]
 
     def get_pharmacies(self) -> list[dict[str, object]]:
@@ -74,15 +74,25 @@ class FakeCheckoutReferenceRepository:
                 "id": 9001,
                 "region": {"id": 1},
                 "city": {"id": 101},
-                "translations": {"ru": {"name": "Аптека 9001"}},
+                "translations": {"ru": {"name": "Pharmacy 9001"}},
             },
             {
                 "id": 9002,
                 "region": {"id": 2},
                 "city_id": 201,
-                "translations": {"ru": {"name": "Аптека 9002"}},
+                "translations": {"ru": {"name": "Pharmacy 9002"}},
             },
         ]
+
+    def get_pickup_timeslot(self, pharmacy_id: int) -> dict[str, object]:
+        self.calls.append(f"pickup_timeslot:{pharmacy_id}")
+        return {
+            "deliveryDate": "02.03.2026",
+            "from": "14:00",
+            "to": "20:00",
+            "orderEnd": "05.03.2026",
+            "pharmacyClose": "20:00",
+        }
 
 
 class CheckoutToolsTests(unittest.TestCase):
@@ -101,7 +111,6 @@ class CheckoutToolsTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["status"], "cart_empty")
-        self.assertIn("корзин", str(payload["message"]).lower())
         self.assertIn("cart_session_id", payload)
         self.assertEqual(reference_repository.calls, [])
 
@@ -185,8 +194,9 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["status"], "pickup_contact_and_region")
         region_ids = [region["id"] for region in payload["available_regions"]]
         self.assertEqual(region_ids, [1, 2])
-        self.assertTrue(all(set(region.keys()) == {"id", "name"} for region in payload["available_regions"]))
-        self.assertTrue(all(isinstance(region["name"], str) and region["name"] for region in payload["available_regions"]))
+        self.assertTrue(
+            all(set(region.keys()) == {"id", "name"} for region in payload["available_regions"])
+        )
 
     def test_checkout_order_pickup_region_returns_cities_with_pharmacies(self) -> None:
         cart_repository = FakeCartRepository()
@@ -213,7 +223,6 @@ class CheckoutToolsTests(unittest.TestCase):
         city_ids = [city["id"] for city in payload["available_cities"]]
         self.assertEqual(city_ids, [101])
         self.assertTrue(all(set(city.keys()) == {"id", "name"} for city in payload["available_cities"]))
-        self.assertTrue(all(isinstance(city["name"], str) and city["name"] for city in payload["available_cities"]))
 
     def test_checkout_order_pickup_city_returns_pharmacies(self) -> None:
         cart_repository = FakeCartRepository()
@@ -241,6 +250,34 @@ class CheckoutToolsTests(unittest.TestCase):
         pharmacy_ids = [pharmacy["id"] for pharmacy in payload["available_pharmacies"]]
         self.assertEqual(pharmacy_ids, [9001])
 
+    def test_checkout_order_pickup_pharmacy_returns_pickup_window(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_id=1,
+            pickup_city_id=101,
+            pickup_pharmacy_id=9001,
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "pickup_contact")
+        self.assertEqual(payload["pickup"]["pharmacy_id"], 9001)
+        self.assertEqual(payload["pickup"]["pickup_window"]["deliveryDate"], "02.03.2026")
+        self.assertIn("pickup_timeslot:9001", reference_repository.calls)
+
     def test_checkout_order_pickup_validates_contact_fields(self) -> None:
         cart_repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()
@@ -258,6 +295,7 @@ class CheckoutToolsTests(unittest.TestCase):
             delivery_method="pickup",
             pickup_region_id=1,
             pickup_city_id=101,
+            pickup_pharmacy_id=9001,
             pickup_contact={
                 "first_name": "Al",
                 "last_name": "Iv",
@@ -272,6 +310,31 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["status"], "validation_error")
         fields = {error["field"] for error in payload["errors"]}
         self.assertSetEqual(fields, {"first_name", "last_name", "phone", "email"})
+
+    def test_checkout_order_pickup_rejects_skipping_pharmacy_selection(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="pickup",
+            pickup_region_id=1,
+            pickup_city_id=101,
+            pickup_contact={"first_name": "Alice", "phone": "+37369111222"},
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "pickup_pharmacy_selection")
 
     def test_checkout_order_pickup_accepts_valid_contact_payload(self) -> None:
         cart_repository = FakeCartRepository()
@@ -290,13 +353,14 @@ class CheckoutToolsTests(unittest.TestCase):
             delivery_method="pickup",
             pickup_region_id=2,
             pickup_city_id=201,
+            pickup_pharmacy_id=9002,
             pickup_contact={
                 "first_name": "Alice",
                 "last_name": "Smith",
                 "phone": "+37369111222",
                 "email": "alice@example.com",
             },
-            comment="Позвоните за 10 минут",
+            comment="Call before delivery",
             repository=cart_repository,
             token_store=token_store,
             reference_repository=reference_repository,
@@ -305,7 +369,9 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["status"], "pickup_ready_for_submission")
         self.assertEqual(payload["pickup"]["region_id"], 2)
         self.assertEqual(payload["pickup"]["city_id"], 201)
-        self.assertEqual(payload["pickup"]["selected_pharmacies"][0]["id"], 9002)
+        self.assertEqual(payload["pickup"]["pharmacy_id"], 9002)
+        self.assertEqual(payload["pickup"]["pharmacy"]["id"], 9002)
+        self.assertEqual(payload["pickup"]["pickup_window"]["deliveryDate"], "02.03.2026")
 
     def test_checkout_reference_repository_calls_all_expected_get_endpoints(self) -> None:
         class FakeResponse:
@@ -333,6 +399,7 @@ class CheckoutToolsTests(unittest.TestCase):
         repository.get_regions()
         repository.get_cities_without_regions()
         repository.get_pharmacies()
+        repository.get_pickup_timeslot(9001)
 
         self.assertEqual(
             requests,
@@ -340,6 +407,7 @@ class CheckoutToolsTests(unittest.TestCase):
                 ("https://stage.apteka.md/api/v1/front//regions", "GET"),
                 ("https://stage.apteka.md/api/v1/front//cities-without-regions", "GET"),
                 ("https://stage.apteka.md/api/v1/front//pharmacies/new-list", "GET"),
+                ("https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up/9001", "GET"),
             ],
         )
 

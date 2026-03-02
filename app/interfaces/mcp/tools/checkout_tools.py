@@ -15,6 +15,7 @@ from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 APTEKA_REGIONS_URL = "https://stage.apteka.md/api/v1/front//regions"
 APTEKA_CITIES_WITHOUT_REGIONS_URL = "https://stage.apteka.md/api/v1/front//cities-without-regions"
 APTEKA_PHARMACIES_URL = "https://stage.apteka.md/api/v1/front//pharmacies/new-list"
+APTEKA_PICKUP_CALCULATE_URL = "https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up"
 _CHECKOUT_REFERENCE_CACHE_LOCK = Lock()
 _CHECKOUT_REFERENCE_CACHE: dict[str, list[dict[str, Any]]] | None = None
 _SIMPLE_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -27,6 +28,8 @@ class CheckoutReferenceRepository(Protocol):
     def get_cities_without_regions(self) -> list[dict[str, Any]]: ...
 
     def get_pharmacies(self) -> list[dict[str, Any]]: ...
+
+    def get_pickup_timeslot(self, pharmacy_id: int) -> dict[str, Any]: ...
 
 
 class AptekaCheckoutReferenceRepository:
@@ -56,6 +59,12 @@ class AptekaCheckoutReferenceRepository:
     def get_pharmacies(self) -> list[dict[str, Any]]:
         return self._load_collection(self._pharmacies_url)
 
+    def get_pickup_timeslot(self, pharmacy_id: int) -> dict[str, Any]:
+        request = Request(url=f"{APTEKA_PICKUP_CALCULATE_URL}/{pharmacy_id}", method="GET")
+        with self._urlopen(request, timeout=self._timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return payload if isinstance(payload, dict) else {}
+
     def _load_collection(self, url: str) -> list[dict[str, Any]]:
         request = Request(url=url, method="GET")
         with self._urlopen(request, timeout=self._timeout) as response:
@@ -69,6 +78,7 @@ def checkout_order(
     delivery_method: str | None = None,
     pickup_region_id: int | str | None = None,
     pickup_city_id: int | str | None = None,
+    pickup_pharmacy_id: int | str | None = None,
     pickup_contact: dict[str, object] | None = None,
     comment: str | None = None,
     repository: CartApiRepository | None = None,
@@ -95,9 +105,8 @@ def checkout_order(
             ),
         }
 
-    reference_data = _load_cached_checkout_reference_data(
-        reference_repository or AptekaCheckoutReferenceRepository()
-    )
+    effective_reference_repository = reference_repository or AptekaCheckoutReferenceRepository()
+    reference_data = _load_cached_checkout_reference_data(effective_reference_repository)
 
     if not delivery_method:
         return {
@@ -178,13 +187,43 @@ def checkout_order(
         }
 
     available_pharmacies = _available_pharmacies(reference_data, normalized_region_id, normalized_city_id)
-    if not pickup_contact:
+    if pickup_pharmacy_id is None:
         return {
             "status": "pickup_pharmacy_selection",
             "cart_session_id": resolved_session_id,
             "pickup_region_id": normalized_region_id,
             "pickup_city_id": normalized_city_id,
             "available_pharmacies": available_pharmacies,
+        }
+
+    normalized_pharmacy_id = _parse_positive_int(pickup_pharmacy_id)
+    selected_pharmacy = _find_pharmacy(available_pharmacies, normalized_pharmacy_id)
+    if normalized_pharmacy_id is None or selected_pharmacy is None:
+        return {
+            "status": "validation_error",
+            "errors": [{"field": "pickup_pharmacy_id", "message": "Invalid pharmacy selection"}],
+            "cart_session_id": resolved_session_id,
+        }
+
+    pickup_window = effective_reference_repository.get_pickup_timeslot(normalized_pharmacy_id)
+
+    if not pickup_contact:
+        return {
+            "status": "pickup_contact",
+            "cart_session_id": resolved_session_id,
+            "pickup": {
+                "region_id": normalized_region_id,
+                "city_id": normalized_city_id,
+                "pharmacy_id": normalized_pharmacy_id,
+                "pharmacy": selected_pharmacy,
+                "pickup_window": pickup_window,
+            },
+            "required_fields": {
+                "first_name": "required|min:3",
+                "last_name": "optional|min:3",
+                "phone": "required|libphonenumber-compatible",
+                "email": "optional|email-validator-compatible",
+            },
         }
 
     if comment is not None and not isinstance(comment, str):
@@ -209,7 +248,9 @@ def checkout_order(
         "pickup": {
             "region_id": normalized_region_id,
             "city_id": normalized_city_id,
-            "selected_pharmacies": available_pharmacies,
+            "pharmacy_id": normalized_pharmacy_id,
+            "pharmacy": selected_pharmacy,
+            "pickup_window": pickup_window,
             "contact": {
                 "first_name": str(pickup_contact.get("first_name", "")).strip(),
                 "last_name": str(pickup_contact.get("last_name", "")).strip(),
@@ -318,6 +359,18 @@ def _available_pharmacies(
             continue
         matched.append(pharmacy)
     return matched
+
+
+def _find_pharmacy(
+    pharmacies: list[dict[str, Any]],
+    pharmacy_id: int | None,
+) -> dict[str, Any] | None:
+    if pharmacy_id is None:
+        return None
+    for pharmacy in pharmacies:
+        if _parse_positive_int(pharmacy.get("id")) == pharmacy_id:
+            return pharmacy
+    return None
 
 
 def _extract_pharmacy_city_id(pharmacy: dict[str, Any], region_id: int) -> int | None:
