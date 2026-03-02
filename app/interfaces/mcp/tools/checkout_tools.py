@@ -6,6 +6,7 @@ import json
 import re
 from threading import Lock
 from typing import Any, Callable, Protocol
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen as default_urlopen
 
 from app.domain.cart.repository import CartApiRepository, CartTokenStore
@@ -97,9 +98,26 @@ class AptekaCheckoutReferenceRepository:
             data=request_payload,
             headers={"Content-Type": "application/json"},
         )
-        with self._urlopen(request, timeout=self._timeout) as response:
-            response_payload = json.loads(response.read().decode("utf-8"))
-        return response_payload if isinstance(response_payload, dict) else {}
+        try:
+            with self._urlopen(request, timeout=self._timeout) as response:
+                status_code = int(getattr(response, "status", 200))
+                raw_body = response.read().decode("utf-8", errors="replace").strip()
+            parsed_body = _try_parse_json_object(raw_body)
+            return {
+                "ok": 200 <= status_code < 300,
+                "status_code": status_code,
+                "body": parsed_body,
+                "raw_body": None if parsed_body is not None else (raw_body or None),
+            }
+        except HTTPError as exc:
+            raw_error = exc.read().decode("utf-8", errors="replace").strip()
+            parsed_error = _try_parse_json_object(raw_error)
+            return {
+                "ok": False,
+                "status_code": int(exc.code),
+                "body": parsed_error,
+                "raw_body": None if parsed_error is not None else (raw_error or None),
+            }
 
     def _load_collection(self, url: str) -> list[dict[str, Any]]:
         request = Request(url=url, method="GET")
@@ -224,8 +242,23 @@ def checkout_order(
 
     available_cities = _available_cities_for_region(reference_data, normalized_region_id)
     selected_city: dict[str, Any] | None = None
+    direct_region_pharmacy: dict[str, Any] | None = None
+    if pickup_pharmacy_id is not None or (pickup_pharmacy_name or "").strip():
+        region_pharmacies = _pharmacies_for_region(reference_data, normalized_region_id)
+        direct_region_pharmacy = _resolve_pharmacy(
+            region_pharmacies,
+            pharmacy_id=pickup_pharmacy_id,
+            pharmacy_name=pickup_pharmacy_name,
+        )
+
     if pickup_city_id is None and not (pickup_city_name or "").strip():
-        if len(available_cities) == 1:
+        if direct_region_pharmacy is not None:
+            selected_city = _resolve_city_from_pharmacy(
+                reference_data,
+                region_id=normalized_region_id,
+                pharmacy=direct_region_pharmacy,
+            )
+        elif len(available_cities) == 1:
             selected_city = available_cities[0]
         else:
             return {
@@ -240,6 +273,12 @@ def checkout_order(
             option_id=pickup_city_id,
             option_name=pickup_city_name,
         )
+        if selected_city is None and direct_region_pharmacy is not None:
+            selected_city = _resolve_city_from_pharmacy(
+                reference_data,
+                region_id=normalized_region_id,
+                pharmacy=direct_region_pharmacy,
+            )
 
     if selected_city is None:
         return {
@@ -411,7 +450,15 @@ def checkout_order(
         pickup_window=pickup_window,
         pharmacy_id=normalized_pharmacy_id,
     )
-    confirm_response = effective_reference_repository.confirm_order_by_mobile(confirm_payload)
+    try:
+        confirm_response = effective_reference_repository.confirm_order_by_mobile(confirm_payload)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "order_submission_failed",
+            "cart_session_id": resolved_session_id,
+            "error": str(exc),
+            "confirm_request": confirm_payload,
+        }
 
     return {
         "status": "order_submitted",
@@ -606,6 +653,23 @@ def _available_pharmacies(
     return matched
 
 
+def _pharmacies_for_region(
+    reference_data: dict[str, list[dict[str, Any]]],
+    region_id: int,
+) -> list[dict[str, Any]]:
+    matched: list[dict[str, Any]] = []
+    for pharmacy in reference_data["pharmacies"]:
+        normalized_region_id = None
+        region_node = pharmacy.get("region")
+        if isinstance(region_node, dict):
+            normalized_region_id = _parse_positive_int(region_node.get("id"))
+        if normalized_region_id is None:
+            normalized_region_id = _parse_positive_int(pharmacy.get("region_id"))
+        if normalized_region_id == region_id:
+            matched.append(pharmacy)
+    return matched
+
+
 def _find_pharmacy(
     pharmacies: list[dict[str, Any]],
     pharmacy_id: int | None,
@@ -635,6 +699,29 @@ def _resolve_pharmacy(
     for pharmacy in pharmacies:
         if _normalize_name(_extract_name(pharmacy)) == normalized_name:
             return pharmacy
+    return None
+
+
+def _resolve_city_from_pharmacy(
+    reference_data: dict[str, list[dict[str, Any]]],
+    *,
+    region_id: int,
+    pharmacy: dict[str, Any],
+) -> dict[str, Any] | None:
+    city_id = _extract_pharmacy_city_id(pharmacy, region_id)
+    if city_id is None:
+        return None
+    available_cities = _available_cities_for_region(reference_data, region_id)
+    by_city_id = _resolve_option(
+        available_cities,
+        option_id=city_id,
+        option_name=None,
+    )
+    if by_city_id is not None:
+        return by_city_id
+    fallback_name = _extract_pharmacy_location_name(pharmacy, city_id).strip()
+    if fallback_name:
+        return {"id": city_id, "name": fallback_name}
     return None
 
 
@@ -784,3 +871,13 @@ def _extract_collection(payload: Any) -> list[dict[str, Any]]:
             if isinstance(value, list):
                 return [item for item in value if isinstance(item, dict)]
     return []
+
+
+def _try_parse_json_object(raw_payload: str) -> dict[str, Any] | None:
+    if not raw_payload:
+        return None
+    try:
+        parsed = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
