@@ -218,6 +218,61 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("error", response)
         self.assertEqual(response["error"]["code"], -32602)
 
+    def test_tools_call_error_returns_structured_error_payload(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            side_effect=TimeoutError("external api timeout"),
+        ):
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "req-42",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_products",
+                        "arguments": {"query": "цитрамон", "limit": 5},
+                    },
+                },
+                registry=registry,
+            )
+
+        self.assertIn("result", response)
+        self.assertTrue(response["result"]["isError"])
+        self.assertIn("structuredContent", response["result"])
+        error_payload = response["result"]["structuredContent"]["error"]
+        self.assertEqual(error_payload["request_id"], "req-42")
+        self.assertEqual(error_payload["retriable"], True)
+        self.assertEqual(error_payload["type"], "timeout_error")
+        self.assertIn("timeout", error_payload["message"].lower())
+
+    def test_tools_call_error_logs_with_request_id(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            side_effect=RuntimeError("boom"),
+        ):
+            with patch("app.interfaces.mcp.server.logger") as mocked_logger:
+                response = handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "req-log-1",
+                        "method": "tools/call",
+                        "params": {
+                            "name": "search_products",
+                            "arguments": {"query": "цитрамон", "limit": 5},
+                        },
+                    },
+                    registry=registry,
+                )
+
+        self.assertTrue(response["result"]["isError"])
+        mocked_logger.exception.assert_called_once()
+        _, kwargs = mocked_logger.exception.call_args
+        self.assertIn("extra", kwargs)
+        self.assertEqual(kwargs["extra"]["request_id"], "req-log-1")
+        self.assertEqual(kwargs["extra"]["tool_name"], "search_products")
+
     def test_track_order_status_tool_description_mentions_supported_inputs(self) -> None:
         registry = create_tool_registry()
 
