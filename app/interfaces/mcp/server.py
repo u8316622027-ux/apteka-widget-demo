@@ -15,6 +15,8 @@ from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
 from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
+MAX_REQUEST_BODY_BYTES = 1024 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
@@ -371,6 +373,35 @@ def handle_rpc_request(
     return _rpc_error(request_id, -32601, f"Method not found: {method}")
 
 
+def handle_jsonrpc_payload(
+    request_payload: Any,
+    *,
+    registry: dict[str, ToolDefinition] | None = None,
+) -> dict[str, Any] | list[dict[str, Any]] | None:
+    """Handle single or batch JSON-RPC payload and support notifications."""
+
+    if isinstance(request_payload, list):
+        if not request_payload:
+            return _rpc_error(None, -32600, "Invalid Request")
+
+        responses: list[dict[str, Any]] = []
+        for item in request_payload:
+            if isinstance(item, dict) and "id" not in item:
+                handle_rpc_request(item, registry=registry)
+                continue
+
+            response_payload = handle_rpc_request(item, registry=registry)
+            responses.append(response_payload)
+
+        return responses or None
+
+    if isinstance(request_payload, dict) and "id" not in request_payload:
+        handle_rpc_request(request_payload, registry=registry)
+        return None
+
+    return handle_rpc_request(request_payload, registry=registry)
+
+
 def _rpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
@@ -458,6 +489,13 @@ def _matches_schema_variant(value: dict[str, Any], schema_variant: Any) -> bool:
     return True
 
 
+def _is_json_content_type(content_type: str | None) -> bool:
+    if content_type is None:
+        return False
+    mime_type = content_type.split(";", 1)[0].strip().lower()
+    return mime_type == "application/json"
+
+
 class MCPHttpHandler(BaseHTTPRequestHandler):
     """HTTP transport for minimal MCP JSON-RPC methods."""
 
@@ -474,12 +512,41 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
+        if not _is_json_content_type(self.headers.get("Content-Type")):
+            self._send_json(
+                _rpc_error(None, -32600, "Invalid Request: Content-Type must be application/json"),
+                status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+            )
+            return
+
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length < 0:
+                self._send_json(
+                    _rpc_error(None, -32600, "Invalid Request: Content-Length must be non-negative"),
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+            if content_length > MAX_REQUEST_BODY_BYTES:
+                self._send_json(
+                    _rpc_error(None, -32600, "Invalid Request: body is too large"),
+                    status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                )
+                return
+
             raw_body = self.rfile.read(content_length)
             request_payload = json.loads(raw_body.decode("utf-8"))
-            response_payload = handle_rpc_request(request_payload)
+            response_payload = handle_jsonrpc_payload(request_payload)
+            if response_payload is None:
+                self.send_response(HTTPStatus.NO_CONTENT)
+                self.end_headers()
+                return
             self._send_json(response_payload)
+        except ValueError:
+            self._send_json(
+                _rpc_error(None, -32600, "Invalid Request: invalid Content-Length header"),
+                status=HTTPStatus.BAD_REQUEST,
+            )
         except json.JSONDecodeError:
             self._send_json(_rpc_error(None, -32700, "Parse error"), status=HTTPStatus.BAD_REQUEST)
 
@@ -487,7 +554,9 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
         # Keep server output concise in local development.
         return
 
-    def _send_json(self, payload: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+    def _send_json(
+        self, payload: dict[str, Any] | list[dict[str, Any]], *, status: HTTPStatus = HTTPStatus.OK
+    ) -> None:
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
