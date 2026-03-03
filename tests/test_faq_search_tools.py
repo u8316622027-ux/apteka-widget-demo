@@ -214,7 +214,7 @@ class FaqSearchToolTests(unittest.TestCase):
 
     def test_read_env_prefers_dotenv_value_over_process_env(self) -> None:
         with patch(
-            "app.interfaces.mcp.tools.faq_tools._read_env_file_value",
+            "app.interfaces.mcp.tools.faq_tools.read_env_file_value",
             return_value="from-dotenv",
         ):
             with patch(

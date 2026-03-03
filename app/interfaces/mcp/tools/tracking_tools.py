@@ -9,12 +9,14 @@ from typing import Any, Callable
 from urllib.parse import quote
 from urllib.request import Request, urlopen as default_urlopen
 
+from app.core.env import read_env_file_value
 from app.domain.tracking.repository import OrderTrackingRepository
 from app.domain.tracking.service import OrderTrackingService
 from app.interfaces.mcp.tools.apteka_urls import build_api_url
 
 APTEKA_ORDER_TRACKING_PATH = "/api/orders-by-anything"
 APTEKA_TRACKING_AUTHORIZATION_ENV = "APTEKA_TRACKING_AUTHORIZATION"
+ENV_FILE_PATH = Path(__file__).resolve().parents[4] / ".env"
 ORDER_STATUS_LABELS = {
     "pending": "заказ получен",
     "processing": "заказ обрабатывается",
@@ -135,24 +137,4 @@ def _resolve_authorization() -> str:
     env_value = os.getenv(APTEKA_TRACKING_AUTHORIZATION_ENV, "").strip()
     if env_value:
         return env_value
-    return _read_env_file_value(APTEKA_TRACKING_AUTHORIZATION_ENV)
-
-
-def _read_env_file_value(key: str) -> str:
-    env_path = Path(__file__).resolve().parents[4] / ".env"
-    if not env_path.exists():
-        return ""
-
-    prefix = f"{key}="
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if not line.startswith(prefix):
-            continue
-        value = line[len(prefix) :].strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        return value.strip()
-
-    return ""
+    return read_env_file_value(APTEKA_TRACKING_AUTHORIZATION_ENV, env_path=ENV_FILE_PATH)

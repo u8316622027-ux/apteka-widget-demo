@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 from time import monotonic as _monotonic
@@ -24,8 +26,6 @@ APTEKA_CITIES_WITHOUT_REGIONS_PATH = "//cities-without-regions"
 APTEKA_PHARMACIES_PATH = "//pharmacies/new-list"
 APTEKA_PICKUP_CALCULATE_PATH = "/delivery/calculate/pick-up"
 APTEKA_CONFIRM_ORDER_PATH = "/order/confirm-order-by-using-mobile"
-_CHECKOUT_REFERENCE_CACHE_LOCK = Lock()
-_CHECKOUT_REFERENCE_CACHE: tuple[float, dict[str, list[dict[str, Any]]]] | None = None
 CHECKOUT_REFERENCE_CACHE_TTL_SECONDS = 300.0
 _ALLOWED_PHONE_RULES_LOCK = Lock()
 _ALLOWED_PHONE_RULES_CACHE: list[dict[str, Any]] | None = None
@@ -48,6 +48,12 @@ _PAYMENT_METHOD_OPTIONS = [
 ]
 _PAYMENT_METHOD_IDS = {option["id"] for option in _PAYMENT_METHOD_OPTIONS}
 _ALLOWED_PHONE_CODES_PATH = Path(__file__).resolve().parents[3] / "data" / "allowed_phone_codes.json"
+
+
+@dataclass(slots=True)
+class _CheckoutReferenceCacheState:
+    lock: Lock
+    payload: tuple[float, dict[str, list[dict[str, Any]]]] | None = None
 
 
 class CheckoutReferenceRepository(Protocol):
@@ -219,7 +225,11 @@ def checkout_order(
             pickup_contact=pickup_contact,
             courier_contact=courier_contact,
             courier_address=courier_address,
+            payment_method=payment_method,
+            dont_call_me=dont_call_me,
+            terms_accepted=terms_accepted,
             comment=comment,
+            reference_repository=effective_reference_repository,
         )
 
     if delivery_method != "pickup":
@@ -510,7 +520,11 @@ def _handle_courier_delivery(
     pickup_contact: dict[str, object] | None,
     courier_contact: dict[str, object] | None,
     courier_address: dict[str, object] | None,
+    payment_method: str | None,
+    dont_call_me: bool | None,
+    terms_accepted: bool | None,
     comment: str | None,
+    reference_repository: CheckoutReferenceRepository,
 ) -> dict[str, object]:
     if courier_address is not None and not isinstance(courier_address, dict):
         return {
@@ -614,8 +628,79 @@ def _handle_courier_delivery(
         "phone": str(selected_contact.get("phone", "")).strip(),
         "email": str(selected_contact.get("email", "")).strip(),
     }
+    review_payload = {
+        "cart": {
+            "count": cart_count,
+            "total": cart_payload.get("total"),
+            "items": cart_payload.get("items") if isinstance(cart_payload.get("items"), list) else [],
+        },
+        "customer": normalized_contact,
+        "delivery": {
+            "method": "courier_delivery",
+            "region_name": selected_region_name,
+            "city_name": selected_city_name,
+            "street": normalized_address["street"],
+            "house_number": normalized_address["house_number"],
+            "apartment": normalized_address["apartment"],
+            "entrance": normalized_address["entrance"],
+            "floor": normalized_address["floor"],
+            "intercom_code": normalized_address["intercom_code"],
+        },
+        "comment": comment or "",
+    }
+    confirmation_started = (
+        payment_method is not None or terms_accepted is not None or dont_call_me is not None
+    )
+    if not confirmation_started:
+        return {
+            "status": "courier_ready_for_submission",
+            "cart_session_id": cart_session_id,
+            "courier": {
+                "region_name": selected_region_name,
+                "city_name": selected_city_name,
+                "contact": normalized_contact,
+                "address": normalized_address,
+                "comment": comment or "",
+            },
+            "checkout_review": review_payload,
+            "payment": {"required": True, "options": _PAYMENT_METHOD_OPTIONS},
+            "required_confirmations": {
+                "dont_call_me": False,
+                "terms_accepted": True,
+                "terms_link": "https://front.apteka.md/ru/news/polizovateliskoe-soglashenie",
+            },
+        }
+
+    validation_errors = _validate_confirmation_fields(
+        payment_method=payment_method,
+        terms_accepted=terms_accepted,
+    )
+    if validation_errors:
+        return {
+            "status": "validation_error",
+            "errors": validation_errors,
+            "cart_session_id": cart_session_id,
+        }
+
+    confirm_payload = _build_courier_confirm_payload(
+        payment_method=str(payment_method).strip(),
+        dont_call_me=bool(dont_call_me),
+        comment=comment or "",
+        contact=normalized_contact,
+        address=normalized_address,
+    )
+    try:
+        confirm_response = reference_repository.confirm_order_by_mobile(confirm_payload)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "order_submission_failed",
+            "cart_session_id": cart_session_id,
+            "error": str(exc),
+            "confirm_request": confirm_payload,
+        }
+
     return {
-        "status": "courier_ready_for_submission",
+        "status": "order_submitted",
         "cart_session_id": cart_session_id,
         "courier": {
             "region_name": selected_region_name,
@@ -624,26 +709,9 @@ def _handle_courier_delivery(
             "address": normalized_address,
             "comment": comment or "",
         },
-        "checkout_review": {
-            "cart": {
-                "count": cart_count,
-                "total": cart_payload.get("total"),
-                "items": cart_payload.get("items") if isinstance(cart_payload.get("items"), list) else [],
-            },
-            "customer": normalized_contact,
-            "delivery": {
-                "method": "courier_delivery",
-                "region_name": selected_region_name,
-                "city_name": selected_city_name,
-                "street": normalized_address["street"],
-                "house_number": normalized_address["house_number"],
-                "apartment": normalized_address["apartment"],
-                "entrance": normalized_address["entrance"],
-                "floor": normalized_address["floor"],
-                "intercom_code": normalized_address["intercom_code"],
-            },
-            "comment": comment or "",
-        },
+        "checkout_review": review_payload,
+        "confirm_request": confirm_payload,
+        "confirm_response": confirm_response,
     }
 
 
@@ -1017,31 +1085,62 @@ def _build_pickup_confirm_payload(
     }
 
 
+def _build_courier_confirm_payload(
+    *,
+    payment_method: str,
+    dont_call_me: bool,
+    comment: str,
+    contact: dict[str, str],
+    address: dict[str, str],
+) -> dict[str, object]:
+    return {
+        "orderType": "mobile",
+        "note": comment or None,
+        "dontCallMe": dont_call_me,
+        "delivery": {
+            "firstName": contact["first_name"],
+            "lastName": contact["last_name"] or None,
+            "type": "COURIER_DELIVERY",
+            "phone": contact["phone"],
+            "email": contact["email"] or None,
+            "address": {
+                "street": address["street"],
+                "house_number": address["house_number"],
+                "apartment": address["apartment"] or None,
+                "entrance": address["entrance"] or None,
+                "floor": address["floor"] or None,
+                "intercom_code": address["intercom_code"] or None,
+            },
+        },
+        "payment": {"type": payment_method},
+    }
+
+
 def _load_cached_checkout_reference_data(
     repository: CheckoutReferenceRepository,
 ) -> dict[str, list[dict[str, Any]]]:
-    global _CHECKOUT_REFERENCE_CACHE
-    with _CHECKOUT_REFERENCE_CACHE_LOCK:
+    state = _get_checkout_reference_cache_state()
+    with state.lock:
         now = _monotonic()
-        if _CHECKOUT_REFERENCE_CACHE is not None:
-            expires_at, payload = _CHECKOUT_REFERENCE_CACHE
+        if state.payload is not None:
+            expires_at, payload = state.payload
             if now < expires_at:
                 return payload
 
         payload = {
-                "regions": repository.get_regions(),
-                "cities_without_regions": repository.get_cities_without_regions(),
-                "pharmacies": repository.get_pharmacies(),
-            }
+            "regions": repository.get_regions(),
+            "cities_without_regions": repository.get_cities_without_regions(),
+            "pharmacies": repository.get_pharmacies(),
+        }
         ttl_seconds = _get_checkout_reference_cache_ttl_seconds()
-        _CHECKOUT_REFERENCE_CACHE = (now + ttl_seconds, payload)
+        state.payload = (now + ttl_seconds, payload)
         return payload
 
 
 def _clear_checkout_reference_cache() -> None:
-    global _CHECKOUT_REFERENCE_CACHE
-    with _CHECKOUT_REFERENCE_CACHE_LOCK:
-        _CHECKOUT_REFERENCE_CACHE = None
+    state = _get_checkout_reference_cache_state()
+    with state.lock:
+        state.payload = None
 
 
 def _build_checkout_validation_service() -> CheckoutValidationService:
@@ -1050,6 +1149,11 @@ def _build_checkout_validation_service() -> CheckoutValidationService:
         email_validator=_is_valid_email,
         payment_method_ids=set(_PAYMENT_METHOD_IDS),
     )
+
+
+@lru_cache(maxsize=1)
+def _get_checkout_reference_cache_state() -> _CheckoutReferenceCacheState:
+    return _CheckoutReferenceCacheState(lock=Lock())
 
 
 def _get_checkout_reference_cache_ttl_seconds() -> float:

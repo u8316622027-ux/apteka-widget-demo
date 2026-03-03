@@ -7,6 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 import os
 
+from app.core.env import read_env_file
+
 try:
     from pydantic import Field
     from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,22 +36,6 @@ def _to_float(value: str | None, default: float) -> float:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
-
-
-def _read_env_file(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-
-    values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        raw = line.strip()
-        if not raw or raw.startswith("#") or "=" not in raw:
-            continue
-        key, value = raw.split("=", 1)
-        cleaned = value.strip().strip("'").strip('"')
-        values[key.strip()] = cleaned
-    return values
-
 
 if BaseSettings is not None:
 
@@ -89,7 +75,7 @@ else:
 
         def __init__(self, _env_file: str | Path | None = None) -> None:
             env_path = Path(_env_file) if _env_file else Path(".env")
-            file_env = _read_env_file(env_path)
+            file_env = read_env_file(env_path)
             merged = dict(file_env)
             merged.update({k: v for k, v in os.environ.items() if isinstance(v, str)})
 

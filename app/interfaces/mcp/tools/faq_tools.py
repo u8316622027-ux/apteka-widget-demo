@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.request import Request, urlopen as default_urlopen
 
+from app.core.env import read_env_file_value
 from app.domain.faq.repository import FaqSearchRepository
 from app.domain.faq.service import FaqSearchService
 
@@ -15,6 +16,7 @@ OPENAI_EMBEDDINGS_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDINGS_DIMENSIONS = 1536
 SUPABASE_FAQ_RPC_FUNCTION = "match_faq_chunks"
 FAQ_MATCH_COUNT_DEFAULT = 5
+ENV_FILE_PATH = Path(__file__).resolve().parents[4] / ".env"
 
 
 class OpenAIEmbeddingClient:
@@ -89,8 +91,8 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
             api_key
             or _read_os_env("SUPABASE_KEY")
             or _read_os_env("SUPABASE_SERVICE_ROLE_KEY")
-            or _read_env_file_value("SUPABASE_KEY")
-            or _read_env_file_value("SUPABASE_SERVICE_ROLE_KEY")
+            or read_env_file_value("SUPABASE_KEY", env_path=ENV_FILE_PATH)
+            or read_env_file_value("SUPABASE_SERVICE_ROLE_KEY", env_path=ENV_FILE_PATH)
         ).strip()
         self._default_match_count = default_match_count or _read_positive_int_env(
             "FAQ_MATCH_COUNT_DEFAULT",
@@ -162,7 +164,7 @@ def faq_search(
 
 
 def _read_env(key: str) -> str:
-    value = _read_env_file_value(key).strip()
+    value = read_env_file_value(key, env_path=ENV_FILE_PATH).strip()
     if value:
         return value
     return _read_os_env(key).strip()
@@ -194,22 +196,3 @@ def _read_float_env(key: str) -> float | None:
     except ValueError:
         return None
 
-
-def _read_env_file_value(key: str) -> str:
-    env_path = Path(__file__).resolve().parents[4] / ".env"
-    if not env_path.exists():
-        return ""
-
-    prefix = f"{key}="
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if not line.startswith(prefix):
-            continue
-        value = line[len(prefix) :].strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        return value.strip()
-
-    return ""
