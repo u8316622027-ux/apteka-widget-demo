@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.interfaces.mcp.server import (
+    _build_access_log_message,
     _is_json_content_type,
     _reset_runtime_metrics_for_tests,
     _resolve_http_request_id,
@@ -21,6 +22,7 @@ from app.interfaces.mcp.server import (
     get_runtime_metrics,
     handle_jsonrpc_payload,
     handle_rpc_request,
+    run_server,
 )
 
 
@@ -502,6 +504,43 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("search_products", by_tool)
         self.assertGreaterEqual(int(by_tool["search_products"]["calls"]), 2)
         self.assertGreaterEqual(float(by_tool["search_products"]["avg_latency_ms"]), 0.0)
+
+    def test_build_access_log_message_is_compact_and_human_readable(self) -> None:
+        message = _build_access_log_message(
+            method="POST",
+            path="/mcp",
+            status_code=200,
+            latency_ms=1.237,
+            client_ip="127.0.0.1",
+            user_agent="openai-mcp/1.0.0",
+            request_id="req-123",
+        )
+
+        self.assertEqual(
+            message,
+            "[REQ] POST /mcp -> 200 | 1.24 ms | ip=127.0.0.1 | ua=openai-mcp/1.0.0 | id=req-123",
+        )
+
+    def test_run_server_handles_keyboard_interrupt_gracefully(self) -> None:
+        class FakeServer:
+            def __init__(self) -> None:
+                self.closed = False
+
+            def serve_forever(self) -> None:
+                raise KeyboardInterrupt()
+
+            def server_close(self) -> None:
+                self.closed = True
+
+        fake_server = FakeServer()
+        with patch("app.interfaces.mcp.server._configure_runtime_logging"):
+            with patch("app.interfaces.mcp.server.ThreadingHTTPServer", return_value=fake_server):
+                with patch("builtins.print") as mocked_print:
+                    run_server(host="127.0.0.1", port=8000)
+
+        self.assertTrue(fake_server.closed)
+        mocked_print.assert_any_call("MCP server started on http://127.0.0.1:8000/mcp")
+        mocked_print.assert_any_call("MCP server stopped gracefully.")
 
     def test_track_order_status_tool_description_mentions_supported_inputs(self) -> None:
         registry = create_tool_registry()
