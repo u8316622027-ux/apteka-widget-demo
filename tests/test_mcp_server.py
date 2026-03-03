@@ -148,6 +148,15 @@ class MCPServerTests(unittest.TestCase):
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
         )
         self.assertEqual(tool_payload["ui"]["csp"]["resourceDomains"], ["https://api.apteka.md"])
+        self.assertIn("_meta", tool_payload)
+        self.assertEqual(
+            tool_payload["_meta"]["openai/outputTemplate"],
+            "ui://widget/products.html",
+        )
+        self.assertEqual(
+            tool_payload["_meta"]["openai/widgetDomain"],
+            "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+        )
 
     def test_default_registry_is_cached_between_requests(self) -> None:
         _reset_server_caches_for_tests()
@@ -382,6 +391,29 @@ class MCPServerTests(unittest.TestCase):
 
         self.assertIn("error", response)
         self.assertEqual(response["error"]["code"], -32601)
+
+    def test_resources_list_contains_widget_templates(self) -> None:
+        response = handle_rpc_request(
+            {"jsonrpc": "2.0", "id": 401, "method": "resources/list", "params": {}},
+        )
+        self.assertIn("result", response)
+        resources = response["result"]["resources"]
+        self.assertTrue(any(resource["uri"] == "ui://widget/products.html" for resource in resources))
+
+    def test_resources_read_returns_products_template_content(self) -> None:
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 402,
+                "method": "resources/read",
+                "params": {"uri": "ui://widget/products.html"},
+            },
+        )
+        self.assertIn("result", response)
+        contents = response["result"]["contents"]
+        self.assertEqual(contents[0]["uri"], "ui://widget/products.html")
+        self.assertEqual(contents[0]["mimeType"], "text/html+skybridge")
+        self.assertIn("search-toolbar", contents[0]["text"])
 
     def test_tools_call_requires_string_name(self) -> None:
         registry = create_tool_registry()
