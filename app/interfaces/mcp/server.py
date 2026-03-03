@@ -292,6 +292,26 @@ def _get_default_tool_registry() -> dict[str, ToolDefinition]:
     return create_tool_registry()
 
 
+@lru_cache(maxsize=1)
+def _get_default_tools_list_payload() -> dict[str, Any]:
+    registry = _get_default_tool_registry()
+    return {
+        "tools": [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.input_schema,
+            }
+            for tool in registry.values()
+        ]
+    }
+
+
+def _reset_server_caches_for_tests() -> None:
+    _get_default_tool_registry.cache_clear()
+    _get_default_tools_list_payload.cache_clear()
+
+
 def handle_rpc_request(
     request_payload: dict[str, Any],
     *,
@@ -326,10 +346,10 @@ def handle_rpc_request(
         }
 
     if method == "tools/list":
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
+        if registry is None:
+            tools_result = _get_default_tools_list_payload()
+        else:
+            tools_result = {
                 "tools": [
                     {
                         "name": tool.name,
@@ -338,7 +358,11 @@ def handle_rpc_request(
                     }
                     for tool in active_registry.values()
                 ]
-            },
+            }
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": tools_result,
         }
 
     if method == "tools/call":
@@ -634,7 +658,7 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
         status: HTTPStatus = HTTPStatus.OK,
         request_id: str | None = None,
     ) -> None:
-        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
