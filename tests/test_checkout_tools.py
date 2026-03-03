@@ -798,6 +798,60 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(payload["courier"]["contact"]["first_name"], "Alice")
         self.assertEqual(payload["courier"]["comment"], "Leave at door")
 
+    def test_checkout_order_courier_submits_confirm_payload_when_payment_provided(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+        add_to_my_cart(
+            product_id="17406",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        payload = checkout_order(
+            cart_session_id=str(session["cart_session_id"]),
+            delivery_method="courier_delivery",
+            pickup_contact={
+                "first_name": "Alice",
+                "last_name": "Smith",
+                "phone": "+37369111222",
+                "email": "alice@example.com",
+            },
+            courier_address={
+                "region_name": "Region Two",
+                "city_name": "City 201",
+                "street": "Stefan cel Mare",
+                "house_number": "10A",
+                "apartment": "12",
+                "entrance": "2",
+                "floor": "4",
+                "intercom_code": "42",
+            },
+            payment_method="card_on_receipt",
+            dont_call_me=True,
+            terms_accepted=True,
+            comment="Leave at door",
+            repository=cart_repository,
+            token_store=token_store,
+            reference_repository=reference_repository,
+        )
+
+        self.assertEqual(payload["status"], "order_submitted")
+        self.assertEqual(payload["confirm_response"]["order_id"], 12345)
+        self.assertEqual(len(reference_repository.confirm_payloads), 1)
+        submitted = reference_repository.confirm_payloads[0]
+        self.assertEqual(submitted["orderType"], "mobile")
+        self.assertEqual(submitted["dontCallMe"], True)
+        self.assertEqual(submitted["payment"]["type"], "card_on_receipt")
+
     def test_checkout_order_pickup_submits_confirm_payload(self) -> None:
         cart_repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()

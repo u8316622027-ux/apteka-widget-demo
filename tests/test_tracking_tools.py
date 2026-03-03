@@ -137,7 +137,7 @@ class OrderTrackingTests(unittest.TestCase):
 
         with patch.dict(os.environ, {}, clear=True):
             with patch(
-                "app.interfaces.mcp.tools.tracking_tools._read_env_file_value",
+                "app.interfaces.mcp.tools.tracking_tools.read_env_file_value",
                 return_value="Bearer from-dotenv",
             ):
                 repository = AptekaOrderTrackingRepository(urlopen=fake_urlopen)

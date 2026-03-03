@@ -321,7 +321,7 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(requests[0]["method"], "GET")
         self.assertNotIn("Authorization", requests[0]["headers"])
 
-    def test_apteka_repository_add_item_calls_add_endpoint(self) -> None:
+    def test_apteka_repository_add_item_uses_update_endpoint_with_absolute_quantity(self) -> None:
         class FakeResponse:
             def __init__(self, payload: bytes) -> None:
                 self._payload = payload
@@ -348,18 +348,33 @@ class CartToolsTests(unittest.TestCase):
                     "timeout": timeout,
                 }
             )
-            if request.full_url.endswith("/add"):
+            if request.full_url.endswith("/cart"):
+                return FakeResponse(
+                    b'{"data":{"items":[{"product_id":"17405","quantity":1}],"count":1}}'
+                )
+            if request.full_url.endswith("/update"):
                 return FakeResponse(b"{}")
             return FakeResponse(b'{"data":{"items":[],"count":0}}')
 
         repository = AptekaCartRepository(urlopen=fake_urlopen)
         token = CartToken(access_token="tok-1", token_type="Bearer")
-        repository.add_item(token, product_id="17405", quantity=1)
+        repository.add_item(token, product_id="17405", quantity=5)
 
-        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart/add")
-        self.assertEqual(requests[0]["method"], "POST")
-        self.assertEqual(requests[0]["body"], '{"id":"17405"}')
-        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer tok-1")
+        self.assertEqual(
+            requests[0]["url"],
+            "https://stage.apteka.md/api/v1/front/cart",
+        )
+        self.assertEqual(requests[0]["method"], "GET")
+        self.assertEqual(
+            requests[1]["url"],
+            "https://stage.apteka.md/api/v1/front/cart/update",
+        )
+        self.assertEqual(requests[1]["method"], "POST")
+        self.assertEqual(
+            requests[1]["body"],
+            '{"items":[{"product_id":"17405","quantity":6}],"json":true}',
+        )
+        self.assertEqual(requests[1]["headers"]["Authorization"], "Bearer tok-1")
 
     def test_apteka_repository_update_items_calls_update_endpoint(self) -> None:
         class FakeResponse:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from time import time
 from typing import Any, Callable
 from urllib.parse import quote
@@ -17,7 +18,6 @@ from app.interfaces.mcp.tools.apteka_urls import build_front_url
 from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 
 APTEKA_CART_PATH = "/cart"
-_DEFAULT_TOKEN_STORE: CartTokenStore | None = None
 
 
 @dataclass(slots=True)
@@ -214,25 +214,12 @@ class AptekaCartRepository(CartApiRepository):
         return _map_cart_snapshot(payload)
 
     def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
-        for _ in range(quantity):
-            request_payload = json.dumps(
-                {"id": product_id},
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8")
-            request = Request(
-                url=f"{self._base_url}/add",
-                method="POST",
-                data=request_payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"{token.token_type} {token.access_token}",
-                },
-            )
-            with self._urlopen(request, timeout=self._timeout):
-                continue
-
-        return self.get_cart(token)
+        if quantity <= 0:
+            return self.get_cart(token)
+        current = self.get_cart(token)
+        merged: dict[str, int] = {item.product_id: item.quantity for item in current.items}
+        merged[product_id] = merged.get(product_id, 0) + quantity
+        return self.update_items(token, items=list(merged.items()))
 
     def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
         update_items_payload = [
@@ -316,41 +303,37 @@ def _build_cart_service(
 
 
 def _build_default_token_store() -> CartTokenStore:
-    global _DEFAULT_TOKEN_STORE
-    if _DEFAULT_TOKEN_STORE is not None:
-        return _DEFAULT_TOKEN_STORE
+    return _build_default_token_store_cached()
 
+
+@lru_cache(maxsize=1)
+def _build_default_token_store_cached() -> CartTokenStore:
     settings = get_settings()
     upstash_url = settings.upstash_redis_rest_url.strip()
     upstash_token = settings.upstash_redis_rest_token.strip()
     ttl_seconds = settings.cart_token_ttl_seconds
     if upstash_url and upstash_token:
-        _DEFAULT_TOKEN_STORE = UpstashRestCartTokenStore(
+        return UpstashRestCartTokenStore(
             base_url=upstash_url,
             token=upstash_token,
             ttl_seconds=ttl_seconds,
         )
-        return _DEFAULT_TOKEN_STORE
 
     redis_url = settings.redis_url.strip()
     if not redis_url:
-        _DEFAULT_TOKEN_STORE = InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
-        return _DEFAULT_TOKEN_STORE
+        return InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
 
     try:
         import redis  # type: ignore
     except ImportError:
-        _DEFAULT_TOKEN_STORE = InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
-        return _DEFAULT_TOKEN_STORE
+        return InMemoryCartTokenStore(ttl_seconds=ttl_seconds)
 
     client = redis.from_url(redis_url, decode_responses=False)
-    _DEFAULT_TOKEN_STORE = RedisCartTokenStore(client, ttl_seconds=ttl_seconds)
-    return _DEFAULT_TOKEN_STORE
+    return RedisCartTokenStore(client, ttl_seconds=ttl_seconds)
 
 
 def _clear_default_token_store() -> None:
-    global _DEFAULT_TOKEN_STORE
-    _DEFAULT_TOKEN_STORE = None
+    _build_default_token_store_cached.cache_clear()
 
 
 def _map_cart_snapshot(payload: Any) -> CartSnapshot:
