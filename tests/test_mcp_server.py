@@ -7,6 +7,7 @@ import gzip
 import json
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.interfaces.mcp.server import (
@@ -217,7 +218,14 @@ class MCPServerTests(unittest.TestCase):
 
     def test_tools_call_search_products_cache_respects_max_entries_lru(self) -> None:
         registry = create_tool_registry()
-        with patch("app.interfaces.mcp.server.TOOL_RESPONSE_CACHE_MAX_ENTRIES", 2):
+        with patch(
+            "app.interfaces.mcp.server.get_settings",
+            return_value=SimpleNamespace(
+                mcp_search_cache_ttl_seconds=30.0,
+                mcp_tracking_cache_ttl_seconds=10.0,
+                mcp_tool_cache_max_entries=2,
+            ),
+        ):
             with patch(
                 "app.interfaces.mcp.server.search_products",
                 side_effect=[
@@ -243,6 +251,41 @@ class MCPServerTests(unittest.TestCase):
                         )
 
         self.assertEqual(mocked_search.call_count, 4)
+
+    def test_cache_policy_reads_ttl_from_settings(self) -> None:
+        _reset_server_caches_for_tests()
+        with patch(
+            "app.interfaces.mcp.server.get_settings",
+            return_value=SimpleNamespace(
+                mcp_search_cache_ttl_seconds=42.0,
+                mcp_tracking_cache_ttl_seconds=11.0,
+                mcp_tool_cache_max_entries=2,
+            ),
+        ):
+            registry = create_tool_registry()
+            with patch(
+                "app.interfaces.mcp.server.search_products",
+                return_value={"query": "q", "count": 1, "products": [{"id": 1}]},
+            ) as mocked_search:
+                handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 81,
+                        "method": "tools/call",
+                        "params": {"name": "search_products", "arguments": {"query": "q"}},
+                    },
+                    registry=registry,
+                )
+                handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 82,
+                        "method": "tools/call",
+                        "params": {"name": "search_products", "arguments": {"query": "q"}},
+                    },
+                    registry=registry,
+                )
+        mocked_search.assert_called_once_with("q", limit=10)
 
     def test_tools_call_success_uses_compact_summary_text_content(self) -> None:
         registry = create_tool_registry()

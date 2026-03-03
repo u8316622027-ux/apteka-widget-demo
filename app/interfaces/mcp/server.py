@@ -16,6 +16,7 @@ from time import monotonic as _monotonic
 from typing import Any, Callable
 from uuid import uuid4
 
+from app.core.config import get_settings
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.checkout_tools import checkout_order
 from app.interfaces.mcp.tools.faq_tools import faq_search
@@ -27,10 +28,6 @@ MIN_GZIP_BYTES = 512
 TOOL_RESPONSE_CACHE_TTL_SECONDS = 30.0
 TRACKING_RESPONSE_CACHE_TTL_SECONDS = 10.0
 TOOL_RESPONSE_CACHE_MAX_ENTRIES = 256
-TOOL_RESPONSE_CACHE_POLICIES = {
-    "search_products": TOOL_RESPONSE_CACHE_TTL_SECONDS,
-    "track_order_status_ui": TRACKING_RESPONSE_CACHE_TTL_SECONDS,
-}
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 _TOOL_RESPONSE_CACHE_LOCK = threading.Lock()
@@ -324,6 +321,7 @@ def _get_default_tools_list_payload() -> dict[str, Any]:
 def _reset_server_caches_for_tests() -> None:
     _get_default_tool_registry.cache_clear()
     _get_default_tools_list_payload.cache_clear()
+    _get_tool_cache_config.cache_clear()
     with _TOOL_RESPONSE_CACHE_LOCK:
         _TOOL_RESPONSE_CACHE.clear()
 
@@ -601,17 +599,41 @@ def _classify_tool_error(exc: Exception) -> dict[str, Any]:
 
 
 def _build_tool_cache_key(tool_name: str, arguments: dict[str, Any]) -> str | None:
-    if tool_name not in TOOL_RESPONSE_CACHE_POLICIES:
+    cache_policy = _get_tool_cache_config()["ttl_by_tool_name"]
+    if tool_name not in cache_policy:
         return None
     encoded_args = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return f"{tool_name}:{encoded_args}"
 
 
 def _get_tool_cache_ttl_seconds(tool_name: str) -> float | None:
-    ttl_seconds = TOOL_RESPONSE_CACHE_POLICIES.get(tool_name)
+    ttl_seconds = _get_tool_cache_config()["ttl_by_tool_name"].get(tool_name)
     if ttl_seconds is None or ttl_seconds <= 0:
         return None
     return ttl_seconds
+
+
+@lru_cache(maxsize=1)
+def _get_tool_cache_config() -> dict[str, Any]:
+    settings = get_settings()
+    search_ttl = float(getattr(settings, "mcp_search_cache_ttl_seconds", TOOL_RESPONSE_CACHE_TTL_SECONDS))
+    tracking_ttl = float(
+        getattr(settings, "mcp_tracking_cache_ttl_seconds", TRACKING_RESPONSE_CACHE_TTL_SECONDS)
+    )
+    max_entries = int(getattr(settings, "mcp_tool_cache_max_entries", TOOL_RESPONSE_CACHE_MAX_ENTRIES))
+    if search_ttl <= 0:
+        search_ttl = TOOL_RESPONSE_CACHE_TTL_SECONDS
+    if tracking_ttl <= 0:
+        tracking_ttl = TRACKING_RESPONSE_CACHE_TTL_SECONDS
+    if max_entries <= 0:
+        max_entries = TOOL_RESPONSE_CACHE_MAX_ENTRIES
+    return {
+        "ttl_by_tool_name": {
+            "search_products": search_ttl,
+            "track_order_status_ui": tracking_ttl,
+        },
+        "max_entries": max_entries,
+    }
 
 
 def _get_cached_tool_payload(cache_key: str) -> dict[str, Any] | None:
@@ -639,7 +661,8 @@ def _set_cached_tool_payload(
         if cache_key in _TOOL_RESPONSE_CACHE:
             _TOOL_RESPONSE_CACHE.move_to_end(cache_key)
         _TOOL_RESPONSE_CACHE[cache_key] = (expires_at, payload)
-        while len(_TOOL_RESPONSE_CACHE) > TOOL_RESPONSE_CACHE_MAX_ENTRIES:
+        max_entries = int(_get_tool_cache_config()["max_entries"])
+        while len(_TOOL_RESPONSE_CACHE) > max_entries:
             _TOOL_RESPONSE_CACHE.popitem(last=False)
 
 
