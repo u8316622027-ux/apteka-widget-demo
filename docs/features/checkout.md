@@ -57,7 +57,7 @@
 - `courier_address`:
   - required: `street`, `house_number`
   - optional: `apartment`, `entrance`, `floor`, `intercom_code`
-- `payment_method` (для pickup submit)
+- `payment_method` (для pickup и courier submit)
 - `terms_accepted` (для pickup submit, должно быть `true`)
 - `dont_call_me` (optional, default false в confirm payload)
 - `comment` необязательный текст
@@ -89,7 +89,7 @@
 - Имя/фамилия: правила минимальной длины.
 - Телефон: whitelist по `app/data/allowed_phone_codes.json`.
 - Email: `email_validator`, если библиотека доступна, иначе fallback на regex.
-- Для submit самовывоза обязательны `payment_method` и `terms_accepted = true`.
+- Для submit (самовывоз и courier) обязательны `payment_method` и `terms_accepted = true`.
 
 ## Confirmation and Payment (Pickup)
 - После валидного `pickup_contact` tool возвращает `pickup_confirmation_and_payment` с cart/customer/delivery review.
@@ -105,5 +105,4 @@
 - Проверка принимает только номера, соответствующие `dial_code + min_length/max_length`.
 
 ## Tech Debt / Next Improvements
-- Добавить полноценный submit для courier-ветки.
 - Добавить явный id-контракт для region/city/pharmacy в публичной документации API.

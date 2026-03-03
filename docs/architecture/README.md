@@ -65,20 +65,20 @@
   - `MCP_TOOL_CACHE_MAX_ENTRIES`
 
 ## Внешние API
+- Базовый URL для Apteka API задается через env (`APTEKA_BASE_URL`) и используется всеми tool-адаптерами.
 - Поиск:
-  - `https://stage.apteka.md/api/v1/front/search`
+  - `{APTEKA_BASE_URL}/api/v1/front/search`
 - Корзина:
-  - `https://stage.apteka.md/api/v1/front/cart`
-  - `https://stage.apteka.md/api/v1/front/cart/add`
-  - `https://stage.apteka.md/api/v1/front/cart/update`
+  - `{APTEKA_BASE_URL}/api/v1/front/cart`
+  - `{APTEKA_BASE_URL}/api/v1/front/cart/update`
 - Checkout reference:
-  - `https://stage.apteka.md/api/v1/front//regions`
-  - `https://stage.apteka.md/api/v1/front//cities-without-regions`
-  - `https://stage.apteka.md/api/v1/front//pharmacies/new-list`
-  - `https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up/{pharmacy_id}`
-  - `https://stage.apteka.md/api/v1/front/order/confirm-order-by-using-mobile`
+  - `{APTEKA_BASE_URL}/api/v1/front//regions`
+  - `{APTEKA_BASE_URL}/api/v1/front//cities-without-regions`
+  - `{APTEKA_BASE_URL}/api/v1/front//pharmacies/new-list`
+  - `{APTEKA_BASE_URL}/api/v1/front/delivery/calculate/pick-up/{pharmacy_id}`
+  - `{APTEKA_BASE_URL}/api/v1/front/order/confirm-order-by-using-mobile`
 - Трекинг заказа:
-  - `https://stage.apteka.md/api/orders-by-anything/{x}`
+  - `{APTEKA_BASE_URL}/api/orders-by-anything/{x}`
 
 ## Локальный запуск
 ```bash
