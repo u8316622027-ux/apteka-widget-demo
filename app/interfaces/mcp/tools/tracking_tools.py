@@ -11,8 +11,9 @@ from urllib.request import Request, urlopen as default_urlopen
 
 from app.domain.tracking.repository import OrderTrackingRepository
 from app.domain.tracking.service import OrderTrackingService
+from app.interfaces.mcp.tools.apteka_urls import build_api_url
 
-APTEKA_ORDER_TRACKING_URL = "https://stage.apteka.md/api/orders-by-anything"
+APTEKA_ORDER_TRACKING_PATH = "/api/orders-by-anything"
 APTEKA_TRACKING_AUTHORIZATION_ENV = "APTEKA_TRACKING_AUTHORIZATION"
 ORDER_STATUS_LABELS = {
     "pending": "заказ получен",
@@ -57,12 +58,12 @@ class AptekaOrderTrackingRepository(OrderTrackingRepository):
     def __init__(
         self,
         *,
-        base_url: str = APTEKA_ORDER_TRACKING_URL,
+        base_url: str | None = None,
         timeout: float = 10.0,
         authorization: str | None = None,
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = (base_url or build_api_url(APTEKA_ORDER_TRACKING_PATH)).rstrip("/")
         self._timeout = timeout
         self._authorization = authorization or _resolve_authorization()
         self._urlopen = urlopen

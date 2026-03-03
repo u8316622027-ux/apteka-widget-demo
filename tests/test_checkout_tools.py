@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -946,6 +947,51 @@ class CheckoutToolsTests(unittest.TestCase):
         )
         self.assertEqual(requests[0][1], "POST")
         self.assertEqual(requests[0][2], b'{"dontCallMe":false}')
+
+    def test_checkout_reference_repository_uses_apteka_base_url_from_env(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[tuple[str, str]] = []
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            requests.append((request.full_url, request.get_method()))
+            if request.get_method() == "POST":
+                return FakeResponse(b'{"ok":true}')
+            return FakeResponse(b'{"data":[{"id":1}]}')
+
+        with patch.dict(os.environ, {"APTEKA_BASE_URL": "https://prod.apteka.md"}, clear=False):
+            repository = AptekaCheckoutReferenceRepository(urlopen=fake_urlopen)
+            repository.get_regions()
+            repository.get_cities_without_regions()
+            repository.get_pharmacies()
+            repository.get_pickup_timeslot(9001)
+            repository.confirm_order_by_mobile({"dontCallMe": False})
+
+        self.assertEqual(
+            requests,
+            [
+                ("https://prod.apteka.md/api/v1/front//regions", "GET"),
+                ("https://prod.apteka.md/api/v1/front//cities-without-regions", "GET"),
+                ("https://prod.apteka.md/api/v1/front//pharmacies/new-list", "GET"),
+                ("https://prod.apteka.md/api/v1/front/delivery/calculate/pick-up/9001", "GET"),
+                (
+                    "https://prod.apteka.md/api/v1/front/order/confirm-order-by-using-mobile",
+                    "POST",
+                ),
+            ],
+        )
 
     def test_checkout_reference_repository_confirm_handles_empty_response_body(self) -> None:
         class FakeResponse:

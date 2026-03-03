@@ -13,9 +13,10 @@ from app.core.config import get_settings
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
 from app.domain.cart.repository import CartApiRepository, CartTokenStore
 from app.domain.cart.service import CartService
+from app.interfaces.mcp.tools.apteka_urls import build_front_url
 from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 
-APTEKA_CART_URL = "https://stage.apteka.md/api/v1/front/cart"
+APTEKA_CART_PATH = "/cart"
 _DEFAULT_TOKEN_STORE: CartTokenStore | None = None
 
 
@@ -181,11 +182,11 @@ class AptekaCartRepository(CartApiRepository):
     def __init__(
         self,
         *,
-        base_url: str = APTEKA_CART_URL,
+        base_url: str | None = None,
         timeout: float = 10.0,
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = (base_url or build_front_url(APTEKA_CART_PATH)).rstrip("/")
         self._timeout = timeout
         self._urlopen = urlopen
 

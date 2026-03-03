@@ -10,8 +10,9 @@ from urllib.request import Request, urlopen as default_urlopen
 from app.domain.products.entities import ProductSummary
 from app.domain.products.repository import ProductSearchRepository
 from app.domain.products.service import ProductSearchService
+from app.interfaces.mcp.tools.apteka_urls import build_front_url
 
-APTEKA_SEARCH_URL = "https://stage.apteka.md/api/v1/front/search"
+APTEKA_SEARCH_PATH = "/search"
 
 
 class AptekaSearchRepository(ProductSearchRepository):
@@ -20,11 +21,11 @@ class AptekaSearchRepository(ProductSearchRepository):
     def __init__(
         self,
         *,
-        base_url: str = APTEKA_SEARCH_URL,
+        base_url: str | None = None,
         timeout: float = 10.0,
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
-        self._base_url = base_url
+        self._base_url = (base_url or build_front_url(APTEKA_SEARCH_PATH)).strip()
         self._timeout = timeout
         self._urlopen = urlopen
 

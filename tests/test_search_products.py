@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from app.domain.products.entities import ProductSummary
 from app.domain.products.service import ProductSearchService
@@ -171,3 +172,30 @@ class ProductSearchTests(unittest.TestCase):
         self.assertEqual(
             response["products"][0]["image_url"], "https://api.apteka.md/media/1/full.webp"
         )
+
+    def test_search_repository_uses_apteka_base_url_from_env(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[str] = []
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            requests.append(request.full_url)
+            return FakeResponse(b'{"items":[]}')
+
+        with patch.dict("os.environ", {"APTEKA_BASE_URL": "https://prod.apteka.md"}):
+            repository = AptekaSearchRepository(urlopen=fake_urlopen)
+            repository.search("nurofen")
+
+        self.assertEqual(requests, ["https://prod.apteka.md/api/v1/front/search"])
