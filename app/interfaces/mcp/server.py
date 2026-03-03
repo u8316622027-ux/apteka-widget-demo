@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from functools import lru_cache
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
+from uuid import uuid4
 
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.checkout_tools import checkout_order
@@ -285,17 +287,23 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
     }
 
 
+@lru_cache(maxsize=1)
+def _get_default_tool_registry() -> dict[str, ToolDefinition]:
+    return create_tool_registry()
+
+
 def handle_rpc_request(
     request_payload: dict[str, Any],
     *,
     registry: dict[str, ToolDefinition] | None = None,
+    http_request_id: str | None = None,
 ) -> dict[str, Any]:
     """Handle a single JSON-RPC request."""
 
     if not isinstance(request_payload, dict):
         return _rpc_error(None, -32600, "Invalid Request")
 
-    active_registry = registry or create_tool_registry()
+    active_registry = registry or _get_default_tool_registry()
     request_id = request_payload.get("id")
     method = request_payload.get("method")
     raw_params = request_payload.get("params")
@@ -368,7 +376,8 @@ def handle_rpc_request(
             logger.exception(
                 "mcp_tool_call_failed",
                 extra={
-                    "request_id": request_id,
+                    "http_request_id": http_request_id,
+                    "rpc_request_id": request_id,
                     "tool_name": tool_name,
                     "error_type": error_payload["type"],
                     "retriable": error_payload["retriable"],
@@ -385,6 +394,7 @@ def handle_rpc_request(
                             "message": error_payload["message"],
                             "retriable": error_payload["retriable"],
                             "request_id": request_id,
+                            "http_request_id": http_request_id,
                         }
                     },
                     "isError": True,
@@ -398,6 +408,7 @@ def handle_jsonrpc_payload(
     request_payload: Any,
     *,
     registry: dict[str, ToolDefinition] | None = None,
+    http_request_id: str | None = None,
 ) -> dict[str, Any] | list[dict[str, Any]] | None:
     """Handle single or batch JSON-RPC payload and support notifications."""
 
@@ -408,19 +419,21 @@ def handle_jsonrpc_payload(
         responses: list[dict[str, Any]] = []
         for item in request_payload:
             if isinstance(item, dict) and "id" not in item:
-                handle_rpc_request(item, registry=registry)
+                handle_rpc_request(item, registry=registry, http_request_id=http_request_id)
                 continue
 
-            response_payload = handle_rpc_request(item, registry=registry)
+            response_payload = handle_rpc_request(
+                item, registry=registry, http_request_id=http_request_id
+            )
             responses.append(response_payload)
 
         return responses or None
 
     if isinstance(request_payload, dict) and "id" not in request_payload:
-        handle_rpc_request(request_payload, registry=registry)
+        handle_rpc_request(request_payload, registry=registry, http_request_id=http_request_id)
         return None
 
-    return handle_rpc_request(request_payload, registry=registry)
+    return handle_rpc_request(request_payload, registry=registry, http_request_id=http_request_id)
 
 
 def _rpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
@@ -528,18 +541,29 @@ def _classify_tool_error(exc: Exception) -> dict[str, Any]:
     return {"type": "tool_execution_error", "message": message, "retriable": False}
 
 
+def _resolve_http_request_id(incoming_request_id: str | None) -> str:
+    if incoming_request_id is None:
+        return uuid4().hex
+    normalized = incoming_request_id.strip()
+    if normalized:
+        return normalized
+    return uuid4().hex
+
+
 class MCPHttpHandler(BaseHTTPRequestHandler):
     """HTTP transport for minimal MCP JSON-RPC methods."""
 
     server_version = "AptekaMCP/0.1"
 
     def do_GET(self) -> None:  # noqa: N802
+        request_id = _resolve_http_request_id(self.headers.get("X-Request-Id"))
         if self.path == "/health":
-            self._send_json({"status": "ok"})
+            self._send_json({"status": "ok"}, request_id=request_id)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:  # noqa: N802
+        request_id = _resolve_http_request_id(self.headers.get("X-Request-Id"))
         if self.path != "/mcp":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
@@ -548,6 +572,7 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
             self._send_json(
                 _rpc_error(None, -32600, "Invalid Request: Content-Type must be application/json"),
                 status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                request_id=request_id,
             )
             return
 
@@ -557,42 +582,56 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     _rpc_error(None, -32600, "Invalid Request: Content-Length must be non-negative"),
                     status=HTTPStatus.BAD_REQUEST,
+                    request_id=request_id,
                 )
                 return
             if content_length > MAX_REQUEST_BODY_BYTES:
                 self._send_json(
                     _rpc_error(None, -32600, "Invalid Request: body is too large"),
                     status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    request_id=request_id,
                 )
                 return
 
             raw_body = self.rfile.read(content_length)
             request_payload = json.loads(raw_body.decode("utf-8"))
-            response_payload = handle_jsonrpc_payload(request_payload)
+            response_payload = handle_jsonrpc_payload(request_payload, http_request_id=request_id)
             if response_payload is None:
                 self.send_response(HTTPStatus.NO_CONTENT)
+                self.send_header("X-Request-Id", request_id)
                 self.end_headers()
                 return
-            self._send_json(response_payload)
+            self._send_json(response_payload, request_id=request_id)
         except ValueError:
             self._send_json(
                 _rpc_error(None, -32600, "Invalid Request: invalid Content-Length header"),
                 status=HTTPStatus.BAD_REQUEST,
+                request_id=request_id,
             )
         except json.JSONDecodeError:
-            self._send_json(_rpc_error(None, -32700, "Parse error"), status=HTTPStatus.BAD_REQUEST)
+            self._send_json(
+                _rpc_error(None, -32700, "Parse error"),
+                status=HTTPStatus.BAD_REQUEST,
+                request_id=request_id,
+            )
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Keep server output concise in local development.
         return
 
     def _send_json(
-        self, payload: dict[str, Any] | list[dict[str, Any]], *, status: HTTPStatus = HTTPStatus.OK
+        self,
+        payload: dict[str, Any] | list[dict[str, Any]],
+        *,
+        status: HTTPStatus = HTTPStatus.OK,
+        request_id: str | None = None,
     ) -> None:
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
+        if request_id:
+            self.send_header("X-Request-Id", request_id)
         self.end_headers()
         self.wfile.write(encoded)
 

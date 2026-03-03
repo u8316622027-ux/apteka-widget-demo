@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import http.client
+import json
+import threading
 import unittest
 from unittest.mock import patch
 
 from app.interfaces.mcp.server import (
     _is_json_content_type,
+    _resolve_http_request_id,
+    MCPHttpHandler,
+    ThreadingHTTPServer,
     create_tool_registry,
     handle_jsonrpc_payload,
     handle_rpc_request,
@@ -14,6 +20,14 @@ from app.interfaces.mcp.server import (
 
 
 class MCPServerTests(unittest.TestCase):
+    def test_resolve_http_request_id_prefers_incoming_header(self) -> None:
+        self.assertEqual(_resolve_http_request_id("req-123"), "req-123")
+
+    def test_resolve_http_request_id_generates_when_missing(self) -> None:
+        generated = _resolve_http_request_id(None)
+        self.assertIsInstance(generated, str)
+        self.assertTrue(len(generated) >= 8)
+
     def test_json_content_type_allows_application_json_with_charset(self) -> None:
         self.assertTrue(_is_json_content_type("application/json"))
         self.assertTrue(_is_json_content_type("application/json; charset=utf-8"))
@@ -264,13 +278,15 @@ class MCPServerTests(unittest.TestCase):
                         },
                     },
                     registry=registry,
+                    http_request_id="http-req-1",
                 )
 
         self.assertTrue(response["result"]["isError"])
         mocked_logger.exception.assert_called_once()
         _, kwargs = mocked_logger.exception.call_args
         self.assertIn("extra", kwargs)
-        self.assertEqual(kwargs["extra"]["request_id"], "req-log-1")
+        self.assertEqual(kwargs["extra"]["rpc_request_id"], "req-log-1")
+        self.assertEqual(kwargs["extra"]["http_request_id"], "http-req-1")
         self.assertEqual(kwargs["extra"]["tool_name"], "search_products")
 
     def test_track_order_status_tool_description_mentions_supported_inputs(self) -> None:
@@ -489,6 +505,55 @@ class MCPServerTests(unittest.TestCase):
 
         self.assertIn("courier_contact", properties)
         self.assertIn("courier_address", properties)
+
+
+class MCPHttpTransportRequestIdTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._server = ThreadingHTTPServer(("127.0.0.1", 0), MCPHttpHandler)
+        cls._host, cls._port = cls._server.server_address
+        cls._thread = threading.Thread(target=cls._server.serve_forever, daemon=True)
+        cls._thread.start()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._server.shutdown()
+        cls._server.server_close()
+        cls._thread.join(timeout=2)
+
+    def _post_mcp(self, payload: dict[str, object], headers: dict[str, str] | None = None):
+        body = json.dumps(payload).encode("utf-8")
+        request_headers = {
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+        }
+        if headers:
+            request_headers.update(headers)
+
+        connection = http.client.HTTPConnection(self._host, self._port, timeout=5)
+        connection.request("POST", "/mcp", body=body, headers=request_headers)
+        response = connection.getresponse()
+        raw_body = response.read()
+        headers_map = {key.lower(): value for key, value in response.getheaders()}
+        status_code = response.status
+        connection.close()
+        return status_code, headers_map, raw_body
+
+    def test_http_response_includes_incoming_x_request_id(self) -> None:
+        status, headers, _ = self._post_mcp(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            headers={"X-Request-Id": "incoming-req-42"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("x-request-id"), "incoming-req-42")
+
+    def test_http_response_generates_x_request_id_when_missing(self) -> None:
+        status, headers, _ = self._post_mcp(
+            {"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("x-request-id", headers)
+        self.assertTrue(len(headers["x-request-id"]) >= 8)
 
 
 if __name__ == "__main__":
