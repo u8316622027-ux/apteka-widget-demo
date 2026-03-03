@@ -776,6 +776,22 @@ def _resolve_http_request_id(incoming_request_id: str | None) -> str:
     return uuid4().hex
 
 
+def _build_access_log_message(
+    *,
+    method: str,
+    path: str,
+    status_code: int,
+    latency_ms: float,
+    client_ip: str,
+    user_agent: str,
+    request_id: str,
+) -> str:
+    return (
+        f"[REQ] {method} {path} -> {status_code} | {latency_ms:.2f} ms | "
+        f"ip={client_ip} | ua={user_agent} | id={request_id}"
+    )
+
+
 class MCPHttpHandler(BaseHTTPRequestHandler):
     """HTTP transport for minimal MCP JSON-RPC methods."""
 
@@ -913,19 +929,17 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
         client_host = str(self.client_address[0]) if self.client_address else ""
         client_port = int(self.client_address[1]) if self.client_address else 0
         user_agent = str(self.headers.get("User-Agent") or "")
+        message = _build_access_log_message(
+            method=self.command,
+            path=self.path,
+            status_code=int(status_code),
+            latency_ms=latency_ms,
+            client_ip=client_host,
+            user_agent=user_agent,
+            request_id=request_id,
+        )
         logger.info(
-            (
-                "mcp_http_access method=%s path=%s status=%s latency_ms=%.3f "
-                "client_ip=%s client_port=%s request_id=%s user_agent=%s"
-            ),
-            self.command,
-            self.path,
-            int(status_code),
-            latency_ms,
-            client_host,
-            client_port,
-            request_id,
-            user_agent,
+            message,
             extra={
                 "request_id": request_id,
                 "method": self.command,
@@ -959,7 +973,12 @@ def run_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     _configure_runtime_logging()
     server = ThreadingHTTPServer((host, port), MCPHttpHandler)
     print(f"MCP server started on http://{host}:{port}/mcp")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("MCP server stopped gracefully.")
+    finally:
+        server.server_close()
 
 
 def main() -> None:
