@@ -11,6 +11,7 @@ from unittest.mock import patch
 from app.interfaces.mcp.server import (
     _is_json_content_type,
     _resolve_http_request_id,
+    _reset_server_caches_for_tests,
     MCPHttpHandler,
     ThreadingHTTPServer,
     create_tool_registry,
@@ -20,6 +21,9 @@ from app.interfaces.mcp.server import (
 
 
 class MCPServerTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        _reset_server_caches_for_tests()
+
     def test_resolve_http_request_id_prefers_incoming_header(self) -> None:
         self.assertEqual(_resolve_http_request_id("req-123"), "req-123")
 
@@ -117,6 +121,18 @@ class MCPServerTests(unittest.TestCase):
                 "track_order_status_ui",
             },
         )
+
+    def test_default_registry_is_cached_between_requests(self) -> None:
+        _reset_server_caches_for_tests()
+        with patch(
+            "app.interfaces.mcp.server.create_tool_registry",
+            wraps=create_tool_registry,
+        ) as mocked_create_registry:
+            handle_rpc_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+            handle_rpc_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+            handle_rpc_request({"jsonrpc": "2.0", "id": 3, "method": "initialize", "params": {}})
+
+        self.assertEqual(mocked_create_registry.call_count, 1)
 
     def test_tools_call_search_products_delegates_to_tool_function(self) -> None:
         registry = create_tool_registry()
