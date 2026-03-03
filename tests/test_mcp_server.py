@@ -158,6 +158,63 @@ class MCPServerTests(unittest.TestCase):
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
 
+    def test_tools_call_search_products_uses_ttl_cache(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            return_value={"query": "цитрамон", "count": 1, "products": [{"id": 1}]},
+        ) as mocked_search:
+            first = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 31,
+                    "method": "tools/call",
+                    "params": {"name": "search_products", "arguments": {"query": "цитрамон", "limit": 5}},
+                },
+                registry=registry,
+            )
+            second = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {"name": "search_products", "arguments": {"query": "цитрамон", "limit": 5}},
+                },
+                registry=registry,
+            )
+
+        mocked_search.assert_called_once_with("цитрамон", limit=5)
+        self.assertEqual(first["result"]["structuredContent"]["count"], 1)
+        self.assertEqual(second["result"]["structuredContent"]["count"], 1)
+
+    def test_tools_call_search_products_cache_expires_after_ttl(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            return_value={"query": "цитрамон", "count": 1, "products": [{"id": 1}]},
+        ) as mocked_search:
+            with patch("app.interfaces.mcp.server._monotonic", side_effect=[0.0, 0.0, 60.0, 60.0]):
+                handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 41,
+                        "method": "tools/call",
+                        "params": {"name": "search_products", "arguments": {"query": "цитрамон", "limit": 5}},
+                    },
+                    registry=registry,
+                )
+                handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 42,
+                        "method": "tools/call",
+                        "params": {"name": "search_products", "arguments": {"query": "цитрамон", "limit": 5}},
+                    },
+                    registry=registry,
+                )
+
+        self.assertEqual(mocked_search.call_count, 2)
+
     def test_tools_call_success_uses_compact_summary_text_content(self) -> None:
         registry = create_tool_registry()
         with patch(

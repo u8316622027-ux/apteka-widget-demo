@@ -6,10 +6,12 @@ import argparse
 import gzip
 import json
 import logging
+import threading
 from functools import lru_cache
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from time import monotonic as _monotonic
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -21,8 +23,11 @@ from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 MIN_GZIP_BYTES = 512
+TOOL_RESPONSE_CACHE_TTL_SECONDS = 30.0
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+_TOOL_RESPONSE_CACHE_LOCK = threading.Lock()
+_TOOL_RESPONSE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,6 +317,8 @@ def _get_default_tools_list_payload() -> dict[str, Any]:
 def _reset_server_caches_for_tests() -> None:
     _get_default_tool_registry.cache_clear()
     _get_default_tools_list_payload.cache_clear()
+    with _TOOL_RESPONSE_CACHE_LOCK:
+        _TOOL_RESPONSE_CACHE.clear()
 
 
 def handle_rpc_request(
@@ -384,8 +391,24 @@ def handle_rpc_request(
         if validation_error is not None:
             return _rpc_error(request_id, -32602, f"Invalid params: {validation_error}")
 
+        cache_key = _build_tool_cache_key(tool_name, arguments)
+        if cache_key is not None:
+            cached_payload = _get_cached_tool_payload(cache_key)
+            if cached_payload is not None:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "content": [{"type": "text", "text": _build_tool_success_text(cached_payload)}],
+                        "structuredContent": cached_payload,
+                        "isError": False,
+                    },
+                }
+
         try:
             result_payload = tool.handler(arguments)
+            if cache_key is not None:
+                _set_cached_tool_payload(cache_key, result_payload)
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -563,6 +586,32 @@ def _classify_tool_error(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, ValueError):
         return {"type": "validation_error", "message": message, "retriable": False}
     return {"type": "tool_execution_error", "message": message, "retriable": False}
+
+
+def _build_tool_cache_key(tool_name: str, arguments: dict[str, Any]) -> str | None:
+    if tool_name != "search_products":
+        return None
+    encoded_args = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"{tool_name}:{encoded_args}"
+
+
+def _get_cached_tool_payload(cache_key: str) -> dict[str, Any] | None:
+    now = _monotonic()
+    with _TOOL_RESPONSE_CACHE_LOCK:
+        record = _TOOL_RESPONSE_CACHE.get(cache_key)
+        if record is None:
+            return None
+        expires_at, payload = record
+        if now >= expires_at:
+            _TOOL_RESPONSE_CACHE.pop(cache_key, None)
+            return None
+        return payload
+
+
+def _set_cached_tool_payload(cache_key: str, payload: dict[str, Any]) -> None:
+    expires_at = _monotonic() + TOOL_RESPONSE_CACHE_TTL_SECONDS
+    with _TOOL_RESPONSE_CACHE_LOCK:
+        _TOOL_RESPONSE_CACHE[cache_key] = (expires_at, payload)
 
 
 def _build_tool_success_text(result_payload: dict[str, Any]) -> str:
