@@ -287,10 +287,19 @@ def handle_rpc_request(
 ) -> dict[str, Any]:
     """Handle a single JSON-RPC request."""
 
+    if not isinstance(request_payload, dict):
+        return _rpc_error(None, -32600, "Invalid Request")
+
     active_registry = registry or create_tool_registry()
     request_id = request_payload.get("id")
     method = request_payload.get("method")
-    params = request_payload.get("params") or {}
+    raw_params = request_payload.get("params")
+    if raw_params is None:
+        params: dict[str, Any] = {}
+    elif isinstance(raw_params, dict):
+        params = raw_params
+    else:
+        return _rpc_error(request_id, -32602, "Invalid params: params must be an object")
 
     if method == "initialize":
         return {
@@ -321,10 +330,20 @@ def handle_rpc_request(
 
     if method == "tools/call":
         tool_name = params.get("name")
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return _rpc_error(request_id, -32602, "Invalid params: name must be a non-empty string")
+
         arguments = params.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            return _rpc_error(request_id, -32602, "Invalid params: arguments must be an object")
+
         tool = active_registry.get(tool_name)
         if tool is None:
             return _rpc_error(request_id, -32601, f"Tool not found: {tool_name}")
+
+        validation_error = _validate_input_schema(arguments, tool.input_schema)
+        if validation_error is not None:
+            return _rpc_error(request_id, -32602, f"Invalid params: {validation_error}")
 
         try:
             result_payload = tool.handler(arguments)
@@ -358,6 +377,85 @@ def _rpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
+
+def _validate_input_schema(arguments: dict[str, Any], schema: dict[str, Any]) -> str | None:
+    return _validate_value(arguments, schema, path="arguments")
+
+
+def _validate_value(value: Any, schema: dict[str, Any], *, path: str) -> str | None:
+    expected_type = schema.get("type")
+    if expected_type == "object":
+        if not isinstance(value, dict):
+            return f"{path} must be an object"
+
+        required = schema.get("required")
+        if isinstance(required, list):
+            for field_name in required:
+                if isinstance(field_name, str) and field_name not in value:
+                    return f"{path}.{field_name} is required"
+
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            for field_name, field_schema in properties.items():
+                if field_name not in value or not isinstance(field_schema, dict):
+                    continue
+                nested_error = _validate_value(
+                    value[field_name],
+                    field_schema,
+                    path=f"{path}.{field_name}",
+                )
+                if nested_error is not None:
+                    return nested_error
+
+        any_of = schema.get("anyOf")
+        if isinstance(any_of, list) and any_of:
+            if not any(_matches_schema_variant(value, item) for item in any_of):
+                return f"{path} must satisfy at least one anyOf schema"
+        return None
+
+    if expected_type == "array":
+        if not isinstance(value, list):
+            return f"{path} must be an array"
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                nested_error = _validate_value(item, item_schema, path=f"{path}[{index}]")
+                if nested_error is not None:
+                    return nested_error
+        return None
+
+    if expected_type == "string":
+        if not isinstance(value, str):
+            return f"{path} must be a string"
+
+    if expected_type == "integer":
+        if not isinstance(value, int) or isinstance(value, bool):
+            return f"{path} must be an integer"
+        minimum = schema.get("minimum")
+        if isinstance(minimum, int) and value < minimum:
+            return f"{path} must be greater than or equal to {minimum}"
+
+    if expected_type == "boolean":
+        if not isinstance(value, bool):
+            return f"{path} must be a boolean"
+
+    enum = schema.get("enum")
+    if isinstance(enum, list) and value not in enum:
+        return f"{path} must be one of {enum}"
+
+    return None
+
+
+def _matches_schema_variant(value: dict[str, Any], schema_variant: Any) -> bool:
+    if not isinstance(schema_variant, dict):
+        return False
+    required = schema_variant.get("required")
+    if isinstance(required, list):
+        for field_name in required:
+            if isinstance(field_name, str) and field_name not in value:
+                return False
+    return True
 
 
 class MCPHttpHandler(BaseHTTPRequestHandler):

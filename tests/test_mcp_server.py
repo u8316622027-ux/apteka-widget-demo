@@ -9,6 +9,12 @@ from app.interfaces.mcp.server import create_tool_registry, handle_rpc_request
 
 
 class MCPServerTests(unittest.TestCase):
+    def test_invalid_request_payload_type_returns_invalid_request_error(self) -> None:
+        response = handle_rpc_request("not-a-dict")  # type: ignore[arg-type]
+
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], -32600)
+
     def test_initialize_returns_server_info(self) -> None:
         registry = create_tool_registry()
 
@@ -77,6 +83,86 @@ class MCPServerTests(unittest.TestCase):
 
         self.assertIn("error", response)
         self.assertEqual(response["error"]["code"], -32601)
+
+    def test_tools_call_requires_string_name(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {"arguments": {"query": "цитрамон"}},
+            },
+            registry=registry,
+        )
+
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], -32602)
+
+    def test_tools_call_requires_object_arguments(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {"name": "search_products", "arguments": ["bad"]},
+            },
+            registry=registry,
+        )
+
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], -32602)
+
+    def test_tools_call_validates_required_fields_from_schema(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {"name": "search_products", "arguments": {}},
+            },
+            registry=registry,
+        )
+
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], -32602)
+
+    def test_tools_call_validates_argument_types_from_schema(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": {"name": "search_products", "arguments": {"query": "q", "limit": "5"}},
+            },
+            registry=registry,
+        )
+
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], -32602)
+
+    def test_tools_call_validates_any_of_for_add_to_cart(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "method": "tools/call",
+                "params": {"name": "add_to_my_cart", "arguments": {"cart_session_id": "sess-1"}},
+            },
+            registry=registry,
+        )
+
+        self.assertIn("error", response)
+        self.assertEqual(response["error"]["code"], -32602)
 
     def test_track_order_status_tool_description_mentions_supported_inputs(self) -> None:
         registry = create_tool_registry()
