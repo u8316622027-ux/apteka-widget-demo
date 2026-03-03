@@ -41,3 +41,16 @@ class WidgetTemplateTests(unittest.TestCase):
             self.assertIn("x-data=", template_text)
             self.assertIn("alpinejs", template_text)
 
+    def test_products_template_matches_search_mock_layout(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertIn('class="search-toolbar"', template_text)
+        self.assertIn('placeholder="Искать по всем категориям"', template_text)
+        self.assertIn('class="product-carousel"', template_text)
+        self.assertIn('class="product-card"', template_text)
+        self.assertIn("Аспирин плюс с, таб шип", template_text)
+        self.assertIn("117.99 MDL", template_text)
+        self.assertIn("-8%", template_text)
+        self.assertIn("В корзину", template_text)
+        self.assertIn('class="carousel-arrow left"', template_text)
+        self.assertIn('class="carousel-arrow right"', template_text)
+
