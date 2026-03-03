@@ -458,6 +458,63 @@ class MCPServerTests(unittest.TestCase):
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
 
+    def test_tools_call_track_order_status_uses_ttl_cache(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.track_order_status_ui",
+            return_value={"lookup": "ORD-123", "count": 1, "orders": [{"status": "processing"}]},
+        ) as mocked_tracking:
+            first = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 61,
+                    "method": "tools/call",
+                    "params": {"name": "track_order_status_ui", "arguments": {"lookup": "ORD-123"}},
+                },
+                registry=registry,
+            )
+            second = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 62,
+                    "method": "tools/call",
+                    "params": {"name": "track_order_status_ui", "arguments": {"lookup": "ORD-123"}},
+                },
+                registry=registry,
+            )
+
+        mocked_tracking.assert_called_once_with("ORD-123")
+        self.assertEqual(first["result"]["structuredContent"]["count"], 1)
+        self.assertEqual(second["result"]["structuredContent"]["count"], 1)
+
+    def test_tools_call_track_order_status_cache_expires_after_ttl(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.track_order_status_ui",
+            return_value={"lookup": "ORD-123", "count": 1, "orders": [{"status": "processing"}]},
+        ) as mocked_tracking:
+            with patch("app.interfaces.mcp.server._monotonic", side_effect=[0.0, 0.0, 20.0, 20.0]):
+                handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 71,
+                        "method": "tools/call",
+                        "params": {"name": "track_order_status_ui", "arguments": {"lookup": "ORD-123"}},
+                    },
+                    registry=registry,
+                )
+                handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 72,
+                        "method": "tools/call",
+                        "params": {"name": "track_order_status_ui", "arguments": {"lookup": "ORD-123"}},
+                    },
+                    registry=registry,
+                )
+
+        self.assertEqual(mocked_tracking.call_count, 2)
+
     def test_support_knowledge_search_tool_description_mentions_use_cases(self) -> None:
         registry = create_tool_registry()
 

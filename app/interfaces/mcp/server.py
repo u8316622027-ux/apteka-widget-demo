@@ -25,7 +25,12 @@ from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 MIN_GZIP_BYTES = 512
 TOOL_RESPONSE_CACHE_TTL_SECONDS = 30.0
+TRACKING_RESPONSE_CACHE_TTL_SECONDS = 10.0
 TOOL_RESPONSE_CACHE_MAX_ENTRIES = 256
+TOOL_RESPONSE_CACHE_POLICIES = {
+    "search_products": TOOL_RESPONSE_CACHE_TTL_SECONDS,
+    "track_order_status_ui": TRACKING_RESPONSE_CACHE_TTL_SECONDS,
+}
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 _TOOL_RESPONSE_CACHE_LOCK = threading.Lock()
@@ -393,8 +398,9 @@ def handle_rpc_request(
         if validation_error is not None:
             return _rpc_error(request_id, -32602, f"Invalid params: {validation_error}")
 
+        cache_ttl_seconds = _get_tool_cache_ttl_seconds(tool_name)
         cache_key = _build_tool_cache_key(tool_name, arguments)
-        if cache_key is not None:
+        if cache_ttl_seconds is not None and cache_key is not None:
             cached_payload = _get_cached_tool_payload(cache_key)
             if cached_payload is not None:
                 return {
@@ -409,8 +415,12 @@ def handle_rpc_request(
 
         try:
             result_payload = tool.handler(arguments)
-            if cache_key is not None:
-                _set_cached_tool_payload(cache_key, result_payload)
+            if cache_ttl_seconds is not None and cache_key is not None:
+                _set_cached_tool_payload(
+                    cache_key,
+                    result_payload,
+                    ttl_seconds=cache_ttl_seconds,
+                )
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -591,10 +601,17 @@ def _classify_tool_error(exc: Exception) -> dict[str, Any]:
 
 
 def _build_tool_cache_key(tool_name: str, arguments: dict[str, Any]) -> str | None:
-    if tool_name != "search_products":
+    if tool_name not in TOOL_RESPONSE_CACHE_POLICIES:
         return None
     encoded_args = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return f"{tool_name}:{encoded_args}"
+
+
+def _get_tool_cache_ttl_seconds(tool_name: str) -> float | None:
+    ttl_seconds = TOOL_RESPONSE_CACHE_POLICIES.get(tool_name)
+    if ttl_seconds is None or ttl_seconds <= 0:
+        return None
+    return ttl_seconds
 
 
 def _get_cached_tool_payload(cache_key: str) -> dict[str, Any] | None:
@@ -611,8 +628,13 @@ def _get_cached_tool_payload(cache_key: str) -> dict[str, Any] | None:
         return payload
 
 
-def _set_cached_tool_payload(cache_key: str, payload: dict[str, Any]) -> None:
-    expires_at = _monotonic() + TOOL_RESPONSE_CACHE_TTL_SECONDS
+def _set_cached_tool_payload(
+    cache_key: str,
+    payload: dict[str, Any],
+    *,
+    ttl_seconds: float,
+) -> None:
+    expires_at = _monotonic() + ttl_seconds
     with _TOOL_RESPONSE_CACHE_LOCK:
         if cache_key in _TOOL_RESPONSE_CACHE:
             _TOOL_RESPONSE_CACHE.move_to_end(cache_key)
