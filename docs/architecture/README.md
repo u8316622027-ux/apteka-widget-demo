@@ -1,38 +1,68 @@
-# Архитектура
+﻿# Архитектура
 
 ## Обзор
-Проект представляет собой минимальный MCP backend с рабочими tool-адаптерами для:
+Проект представляет собой MCP backend с рабочими tool-адаптерами для:
 - `search_products`
 - `add_to_my_cart`
 - `my_cart`
 - `track_order_status_ui`
+- `checkout_order`
+- `support_knowledge_search`
 
 ## Слои
 - `app/domain/*`:
-  - доменные сущности и сервисы (`ProductSearchService`, `CartService`, `OrderTrackingService`)
+  - доменные сущности и сервисы (`ProductSearchService`, `CartService`, `OrderTrackingService`, `FaqSearchService`)
 - `app/core/config.py`:
   - централизованные runtime-настройки (env + `.env`)
 - `app/interfaces/mcp/tools/*`:
   - MCP tools и адаптеры к внешним API
 - `app/interfaces/mcp/server.py`:
-  - HTTP JSON-RPC транспорт MCP
+  - HTTP JSON-RPC транспорт на `http.server`
+- `app/interfaces/mcp/fastapi_server.py`:
+  - optional FastAPI транспорт с async offload JSON-RPC dispatch
 
-## MCP Server
-- Endpoint: `POST /mcp`
+## MCP Transport Endpoints
+- Основной RPC endpoint: `POST /mcp`
 - Healthcheck: `GET /health`
-- Методы:
-  - `initialize`
-  - `tools/list`
-  - `tools/call`
+- Runtime metrics: `GET /metrics`
+
+## HTTP Correlation
+- Каждый HTTP-ответ содержит `X-Request-Id`.
+- Если входящий `X-Request-Id` передан клиентом, он переиспользуется.
+- Если не передан, сервер генерирует новый request id.
+- `http_request_id` прокидывается в обработку JSON-RPC и в structured error payload для корреляции логов.
+
+## JSON-RPC методы
+- `initialize`
+- `tools/list`
+- `tools/call`
 
 ## Зарегистрированные Tools
 - `search_products` (реализован)
 - `add_to_my_cart` (реализован: single add + batch update merge)
 - `my_cart` (реализован)
 - `track_order_status_ui` (реализован)
-- `checkout_order` (stub)
+- `checkout_order` (implemented)
 - `support_knowledge_search` (implemented: OpenAI embeddings + Supabase vector RPC)
 - `set_widget_theme` (stub)
+
+## Runtime Metrics
+`GET /metrics` возвращает snapshot:
+- `rpc_requests_total`
+- `tool_calls_total`
+- `tool_errors_total`
+- `cache_hits_total`
+- `cache_misses_total`
+- `tools.<tool_name>.calls/errors/avg_latency_ms`
+
+## Cache
+- TTL cache применяется к:
+  - `search_products`
+  - `track_order_status_ui`
+- Конфигурация через `app/core/config.py`:
+  - `MCP_SEARCH_CACHE_TTL_SECONDS`
+  - `MCP_TRACKING_CACHE_TTL_SECONDS`
+  - `MCP_TOOL_CACHE_MAX_ENTRIES`
 
 ## Внешние API
 - Поиск:
@@ -41,12 +71,19 @@
   - `https://stage.apteka.md/api/v1/front/cart`
   - `https://stage.apteka.md/api/v1/front/cart/add`
   - `https://stage.apteka.md/api/v1/front/cart/update`
+- Checkout reference:
+  - `https://stage.apteka.md/api/v1/front//regions`
+  - `https://stage.apteka.md/api/v1/front//cities-without-regions`
+  - `https://stage.apteka.md/api/v1/front//pharmacies/new-list`
+  - `https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up/{pharmacy_id}`
+  - `https://stage.apteka.md/api/v1/front/order/confirm-order-by-using-mobile`
 - Трекинг заказа:
   - `https://stage.apteka.md/api/orders-by-anything/{x}`
 
 ## Локальный запуск
 ```bash
 python -m app.interfaces.mcp.server --host 0.0.0.0 --port 8000
+python -m app.interfaces.mcp.fastapi_server --host 0.0.0.0 --port 8001
 ```
 
 ## Quality Gates

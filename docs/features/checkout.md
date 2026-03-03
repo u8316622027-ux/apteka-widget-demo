@@ -1,17 +1,18 @@
-# Feature: checkout
+﻿# Feature: checkout
 
 ## Goal
 Провести пользователя через оформление заказа по строгой цепочке:
-1. Выбор способа доставки.
-2. Ветвление на заполнение личных данных и адреса (самовывоз/курьер).
-3. Подтверждение и способ оплаты (пока не реализовано).
+1. Проверка корзины.
+2. Выбор способа доставки.
+3. Ветвление на самовывоз или курьер.
+4. Для самовывоза: подтверждение + оплата + отправка заказа.
 
 ## Flow Rules
 1. `checkout_order` всегда начинается с проверки корзины.
 2. Если корзина пустая: вернуть `cart_empty` и попросить добавить товары.
 3. Если корзина не пустая: вернуть `delivery_method_selection`.
-4. Пользователь не может перейти на поздний этап без обязательных данных предыдущих шагов.
-5. Исключение: если пользователь в одном сообщении передал несколько обязательных полей, tool пропускает его до первого недостающего шага.
+4. Переход на следующий шаг только после обязательных данных текущего шага.
+5. Если пользователь передал сразу несколько обязательных полей, tool пропускает его до первого реально недостающего шага.
 6. Автовыбор:
    - если после выбора региона доступен только один населенный пункт/сектор, он выбирается автоматически;
    - если после выбора населенного пункта доступна только одна аптека, она выбирается автоматически;
@@ -22,7 +23,14 @@
 2. `pickup_city_selection`: после выбора региона показать населенные пункты/секторы с аптеками.
 3. `pickup_pharmacy_selection`: после выбора населенного пункта/сектора показать доступные аптеки.
 4. `pickup_contact`: после выбора аптеки загрузить окно выдачи заказа.
-5. `pickup_ready_for_submission`: после успешной валидации контактных данных.
+5. `pickup_confirmation_and_payment`: после успешной валидации контактных данных вернуть review + оплату + confirmations.
+6. `order_submitted`: заказ успешно отправлен в API подтверждения.
+
+## Courier Branch
+1. `courier_contact_and_region`: вернуть список регионов и требования к контактам.
+2. `courier_city_selection`: после региона вернуть населенные пункты этого региона.
+3. `courier_contact_and_address`: запросить контакты и адрес.
+4. `courier_ready_for_submission`: вернуть нормализованные контакт/адрес и review payload.
 
 ## Pickup Time Window API
 - Endpoint: `GET /api/v1/front/delivery/calculate/pick-up/{pharmacy_id}`
@@ -45,6 +53,13 @@
   - `last_name` необязательно, но если передано, минимум 3 символа
   - `phone` обязательно
   - `email` необязательно
+- `courier_contact` (те же правила, что у `pickup_contact`)
+- `courier_address`:
+  - required: `street`, `house_number`
+  - optional: `apartment`, `entrance`, `floor`, `intercom_code`
+- `payment_method` (для pickup submit)
+- `terms_accepted` (для pickup submit, должно быть `true`)
+- `dont_call_me` (optional, default false в confirm payload)
 - `comment` необязательный текст
 
 ## Status Values
@@ -54,9 +69,14 @@
 - `pickup_city_selection`
 - `pickup_pharmacy_selection`
 - `pickup_contact`
-- `pickup_ready_for_submission`
+- `pickup_confirmation_and_payment`
+- `order_submitted`
+- `order_submission_failed`
+- `courier_contact_and_region`
+- `courier_city_selection`
+- `courier_contact_and_address`
+- `courier_ready_for_submission`
 - `validation_error`
-- `courier_delivery_not_implemented`
 
 ## Data Filtering Rules
 - `available_regions`: только регионы, где есть хотя бы одна аптека.
@@ -67,42 +87,23 @@
 
 ## Validation
 - Имя/фамилия: правила минимальной длины.
-- Телефон: `phonenumbers`, если библиотека доступна, иначе fallback на regex.
+- Телефон: whitelist по `app/data/allowed_phone_codes.json`.
 - Email: `email_validator`, если библиотека доступна, иначе fallback на regex.
-
-## Current Limitations
-- Ветка `courier_delivery` пока не реализована.
-- Список разрешенных стран для строгой проверки телефона будет добавлен отдельно.
+- Для submit самовывоза обязательны `payment_method` и `terms_accepted = true`.
 
 ## Confirmation and Payment (Pickup)
-- After valid `pickup_contact`, tool returns `pickup_confirmation_and_payment` with cart, customer data, pickup delivery date/time and cancellation date (`orderEnd`), payment options, and confirmation checkboxes.
-- Required to submit: `payment_method` and `terms_accepted = true`.
-- Optional: `dont_call_me` (defaults to `false` in confirm payload).
+- После валидного `pickup_contact` tool возвращает `pickup_confirmation_and_payment` с cart/customer/delivery review.
+- Payment options:
+  - `card_on_receipt`
+  - `cash_on_receipt`
+  - `bank_transfer`
 - Submit endpoint: `POST /api/v1/front/order/confirm-order-by-using-mobile`.
+- При неуспешной отправке возвращается `order_submission_failed`.
 
 ## Phone Whitelist
-- Allowed phone metadata is stored in `app/data/allowed_phone_codes.json` (source: user-provided `phones.txt`).
-- Checkout phone validation accepts only numbers matching these `dial_code + min_length/max_length` rules.
+- Allowed phone metadata хранится в `app/data/allowed_phone_codes.json`.
+- Проверка принимает только номера, соответствующие `dial_code + min_length/max_length`.
 
-## Courier Branch (Implemented)
-1. `courier_contact_and_region`: shows all available regions from `/regions`, plus contact requirements.
-2. `courier_city_selection`: after region selection, shows settlements from `/cities-without-regions` filtered by `region_id`.
-3. `courier_contact_and_address`: asks for contact and delivery address details.
-4. `courier_ready_for_submission`: returns normalized contact + courier address + review payload.
-
-### Courier Address Fields
-- Required:
-  - `region_name` (or `region_id`)
-  - `city_name` (or `city_id`)
-  - `street`
-  - `house_number`
-- Optional:
-  - `apartment`
-  - `entrance`
-  - `floor`
-  - `intercom_code`
-
-### Courier Inputs
-- `courier_contact` (same validation rules as pickup contact)
-- `courier_address`
-- `comment` (unchanged, optional text)
+## Tech Debt / Next Improvements
+- Добавить полноценный submit для courier-ветки.
+- Добавить явный id-контракт для region/city/pharmacy в публичной документации API.
