@@ -1,4 +1,4 @@
-"""Optional FastAPI transport for MCP JSON-RPC endpoints."""
+﻿"""Optional FastAPI transport for MCP JSON-RPC endpoints."""
 
 from __future__ import annotations
 
@@ -57,6 +57,7 @@ def create_fastapi_app(*, registry: dict[str, Any] | None = None) -> Any:
     try:
         fastapi = importlib.import_module("fastapi")
         responses = importlib.import_module("fastapi.responses")
+        staticfiles = importlib.import_module("fastapi.staticfiles")
     except ModuleNotFoundError as exc:  # pragma: no cover - environment-dependent
         raise RuntimeError(
             "FastAPI transport requires optional dependencies: fastapi and uvicorn."
@@ -65,6 +66,9 @@ def create_fastapi_app(*, registry: dict[str, Any] | None = None) -> Any:
     app = fastapi.FastAPI(title="Apteka MCP", version="0.1.0")
     Response = responses.Response
     JSONResponse = responses.JSONResponse
+    StaticFiles = staticfiles.StaticFiles
+
+    app.mount("/widgets", StaticFiles(directory="app/widgets"), name="widgets")
 
     @app.get("/health")
     async def health(request: Any) -> Any:
