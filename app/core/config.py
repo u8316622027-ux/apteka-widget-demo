@@ -69,6 +69,7 @@ if BaseSettings is not None:
         cart_token_ttl_seconds: int = Field(default=604800, gt=0)
         mcp_search_cache_ttl_seconds: float = Field(default=30.0, gt=0)
         mcp_tracking_cache_ttl_seconds: float = Field(default=10.0, gt=0)
+        mcp_checkout_reference_cache_ttl_seconds: float = Field(default=300.0, gt=0)
         mcp_tool_cache_max_entries: int = Field(default=256, gt=0)
 
 else:
@@ -83,6 +84,7 @@ else:
         cart_token_ttl_seconds: int = 604800
         mcp_search_cache_ttl_seconds: float = 30.0
         mcp_tracking_cache_ttl_seconds: float = 10.0
+        mcp_checkout_reference_cache_ttl_seconds: float = 300.0
         mcp_tool_cache_max_entries: int = 256
 
         def __init__(self, _env_file: str | Path | None = None) -> None:
@@ -120,6 +122,11 @@ else:
                 self,
                 "mcp_tracking_cache_ttl_seconds",
                 _to_float(merged.get("MCP_TRACKING_CACHE_TTL_SECONDS"), 10.0),
+            )
+            object.__setattr__(
+                self,
+                "mcp_checkout_reference_cache_ttl_seconds",
+                _to_float(merged.get("MCP_CHECKOUT_REFERENCE_CACHE_TTL_SECONDS"), 300.0),
             )
             object.__setattr__(
                 self,

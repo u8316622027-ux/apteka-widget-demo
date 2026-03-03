@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
 from app.interfaces.mcp.tools.cart_tools import InMemoryCartTokenStore, add_to_my_cart, my_cart
@@ -192,6 +193,51 @@ class CheckoutToolsTests(unittest.TestCase):
         self.assertEqual(
             reference_repository.calls,
             ["regions", "cities_without_regions", "pharmacies"],
+        )
+
+    def test_checkout_order_refreshes_reference_data_after_cache_ttl(self) -> None:
+        cart_repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        reference_repository = FakeCheckoutReferenceRepository()
+        session = my_cart(repository=cart_repository, token_store=token_store)
+        add_to_my_cart(
+            product_id="17405",
+            cart_session_id=str(session["cart_session_id"]),
+            repository=cart_repository,
+            token_store=token_store,
+        )
+
+        with patch(
+            "app.interfaces.mcp.tools.checkout_tools._monotonic",
+            side_effect=[0.0, 1000.0],
+        ):
+            with patch(
+                "app.interfaces.mcp.tools.checkout_tools.get_settings",
+                return_value=type("Settings", (), {"mcp_checkout_reference_cache_ttl_seconds": 300.0})(),
+            ):
+                checkout_order(
+                    cart_session_id=str(session["cart_session_id"]),
+                    repository=cart_repository,
+                    token_store=token_store,
+                    reference_repository=reference_repository,
+                )
+                checkout_order(
+                    cart_session_id=str(session["cart_session_id"]),
+                    repository=cart_repository,
+                    token_store=token_store,
+                    reference_repository=reference_repository,
+                )
+
+        self.assertEqual(
+            reference_repository.calls,
+            [
+                "regions",
+                "cities_without_regions",
+                "pharmacies",
+                "regions",
+                "cities_without_regions",
+                "pharmacies",
+            ],
         )
 
     def test_checkout_order_pickup_returns_only_regions_with_pharmacies(self) -> None:

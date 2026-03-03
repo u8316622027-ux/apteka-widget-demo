@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import asdict
+from dataclasses import dataclass
 import threading
 from typing import Callable
 from uuid import uuid4
@@ -12,7 +13,15 @@ from app.domain.cart.entities import CartSnapshot, CartToken
 from app.domain.cart.repository import CartApiRepository, CartTokenStore
 
 _SESSION_LOCK_GUARD = threading.Lock()
-_SESSION_LOCKS: dict[str, threading.Lock] = {}
+
+
+@dataclass(slots=True)
+class _SessionLockState:
+    lock: threading.Lock
+    users: int = 0
+
+
+_SESSION_LOCKS: dict[str, _SessionLockState] = {}
 
 
 class CartService:
@@ -128,13 +137,20 @@ class CartService:
 @contextmanager
 def _session_update_lock(session_id: str):
     with _SESSION_LOCK_GUARD:
-        lock = _SESSION_LOCKS.get(session_id)
-        if lock is None:
-            lock = threading.Lock()
-            _SESSION_LOCKS[session_id] = lock
+        state = _SESSION_LOCKS.get(session_id)
+        if state is None:
+            state = _SessionLockState(lock=threading.Lock())
+            _SESSION_LOCKS[session_id] = state
+        state.users += 1
 
-    lock.acquire()
+    state.lock.acquire()
     try:
         yield
     finally:
-        lock.release()
+        state.lock.release()
+        with _SESSION_LOCK_GUARD:
+            current = _SESSION_LOCKS.get(session_id)
+            if current is state:
+                current.users -= 1
+                if current.users <= 0:
+                    _SESSION_LOCKS.pop(session_id, None)

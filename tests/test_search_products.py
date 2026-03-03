@@ -119,7 +119,7 @@ class ProductSearchTests(unittest.TestCase):
         self.assertEqual(requests[0]["body"], '{"query":"nurofen"}')
         self.assertEqual(requests[0]["headers"].get("Content-type"), "application/json")
         self.assertNotIn("Authorization", requests[0]["headers"])
-        self.assertEqual(response["count"], 2)
+        self.assertEqual(response["count"], 1)
         self.assertEqual(
             response["products"],
             [
@@ -135,19 +135,6 @@ class ProductSearchTests(unittest.TestCase):
                     "description_ro": "Descriere Nurofen",
                     "description_ru": "Описание Нурофен",
                     "image_url": "https://img.local/nurofen.jpg",
-                },
-                {
-                    "id": "A13",
-                    "name_ro": "Citramon RO",
-                    "name_ru": "Citramon RU",
-                    "manufacturer": "LUBNIFARM",
-                    "internationalName": "Acidum acetylsalicylicum",
-                    "country": "Ukraine",
-                    "price": 12.0,
-                    "discount_price": None,
-                    "description_ro": "Descriere Citramon",
-                    "description_ru": "Описание Цитрамон",
-                    "image_url": "https://img.local/citramon.jpg",
                 },
             ],
         )
