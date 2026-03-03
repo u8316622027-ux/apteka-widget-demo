@@ -404,6 +404,33 @@ class CartToolsTests(unittest.TestCase):
         )
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer tok-1")
 
+    def test_apteka_repository_uses_apteka_base_url_from_env(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[str] = []
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            requests.append(request.full_url)
+            return FakeResponse(b'{"accessToken":"token-123","tokenType":"Bearer"}')
+
+        with patch.dict(os.environ, {"APTEKA_BASE_URL": "https://prod.apteka.md"}, clear=False):
+            repository = AptekaCartRepository(urlopen=fake_urlopen)
+            repository.create_cart()
+
+        self.assertEqual(requests, ["https://prod.apteka.md/api/v1/front/cart"])
+
     def test_upstash_rest_store_set_and_get_token(self) -> None:
         class FakeResponse:
             def __init__(self, payload: bytes) -> None:

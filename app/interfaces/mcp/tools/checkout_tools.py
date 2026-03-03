@@ -15,16 +15,15 @@ from app.core.config import get_settings
 from app.domain.cart.repository import CartApiRepository, CartTokenStore
 from app.domain.checkout.entities import CheckoutContact
 from app.domain.checkout.service import CheckoutValidationService
+from app.interfaces.mcp.tools.apteka_urls import build_front_url
 from app.interfaces.mcp.tools.cart_tools import my_cart
 from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 
-APTEKA_REGIONS_URL = "https://stage.apteka.md/api/v1/front//regions"
-APTEKA_CITIES_WITHOUT_REGIONS_URL = "https://stage.apteka.md/api/v1/front//cities-without-regions"
-APTEKA_PHARMACIES_URL = "https://stage.apteka.md/api/v1/front//pharmacies/new-list"
-APTEKA_PICKUP_CALCULATE_URL = "https://stage.apteka.md/api/v1/front/delivery/calculate/pick-up"
-APTEKA_CONFIRM_ORDER_URL = (
-    "https://stage.apteka.md/api/v1/front/order/confirm-order-by-using-mobile"
-)
+APTEKA_REGIONS_PATH = "//regions"
+APTEKA_CITIES_WITHOUT_REGIONS_PATH = "//cities-without-regions"
+APTEKA_PHARMACIES_PATH = "//pharmacies/new-list"
+APTEKA_PICKUP_CALCULATE_PATH = "/delivery/calculate/pick-up"
+APTEKA_CONFIRM_ORDER_PATH = "/order/confirm-order-by-using-mobile"
 _CHECKOUT_REFERENCE_CACHE_LOCK = Lock()
 _CHECKOUT_REFERENCE_CACHE: tuple[float, dict[str, list[dict[str, Any]]]] | None = None
 CHECKOUT_REFERENCE_CACHE_TTL_SECONDS = 300.0
@@ -69,15 +68,21 @@ class AptekaCheckoutReferenceRepository:
     def __init__(
         self,
         *,
-        regions_url: str = APTEKA_REGIONS_URL,
-        cities_without_regions_url: str = APTEKA_CITIES_WITHOUT_REGIONS_URL,
-        pharmacies_url: str = APTEKA_PHARMACIES_URL,
+        regions_url: str | None = None,
+        cities_without_regions_url: str | None = None,
+        pharmacies_url: str | None = None,
+        pickup_calculate_url: str | None = None,
+        confirm_order_url: str | None = None,
         timeout: float = 10.0,
         urlopen: Callable[..., Any] = default_urlopen,
     ) -> None:
-        self._regions_url = regions_url
-        self._cities_without_regions_url = cities_without_regions_url
-        self._pharmacies_url = pharmacies_url
+        self._regions_url = regions_url or build_front_url(APTEKA_REGIONS_PATH)
+        self._cities_without_regions_url = cities_without_regions_url or build_front_url(
+            APTEKA_CITIES_WITHOUT_REGIONS_PATH
+        )
+        self._pharmacies_url = pharmacies_url or build_front_url(APTEKA_PHARMACIES_PATH)
+        self._pickup_calculate_url = pickup_calculate_url or build_front_url(APTEKA_PICKUP_CALCULATE_PATH)
+        self._confirm_order_url = confirm_order_url or build_front_url(APTEKA_CONFIRM_ORDER_PATH)
         self._timeout = timeout
         self._urlopen = urlopen
 
@@ -91,7 +96,7 @@ class AptekaCheckoutReferenceRepository:
         return self._load_collection(self._pharmacies_url)
 
     def get_pickup_timeslot(self, pharmacy_id: int) -> dict[str, Any]:
-        request = Request(url=f"{APTEKA_PICKUP_CALCULATE_URL}/{pharmacy_id}", method="GET")
+        request = Request(url=f"{self._pickup_calculate_url}/{pharmacy_id}", method="GET")
         with self._urlopen(request, timeout=self._timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return payload if isinstance(payload, dict) else {}
@@ -103,7 +108,7 @@ class AptekaCheckoutReferenceRepository:
             separators=(",", ":"),
         ).encode("utf-8")
         request = Request(
-            url=APTEKA_CONFIRM_ORDER_URL,
+            url=self._confirm_order_url,
             method="POST",
             data=request_payload,
             headers={"Content-Type": "application/json"},
