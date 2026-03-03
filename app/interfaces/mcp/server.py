@@ -7,6 +7,7 @@ from collections import OrderedDict
 import gzip
 import json
 import logging
+import os
 import threading
 from functools import lru_cache
 from dataclasses import dataclass
@@ -782,19 +783,31 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:  # noqa: N802
+        started_at = _perf_counter()
         request_id = _resolve_http_request_id(self.headers.get("X-Request-Id"))
         if self.path == "/health":
             self._send_json({"status": "ok"}, request_id=request_id)
+            self._log_access(
+                request_id=request_id, status_code=HTTPStatus.OK, started_at=started_at
+            )
             return
         if self.path == "/metrics":
             self._send_json(get_runtime_metrics(), request_id=request_id)
+            self._log_access(
+                request_id=request_id, status_code=HTTPStatus.OK, started_at=started_at
+            )
             return
         self.send_error(HTTPStatus.NOT_FOUND)
+        self._log_access(request_id=request_id, status_code=HTTPStatus.NOT_FOUND, started_at=started_at)
 
     def do_POST(self) -> None:  # noqa: N802
+        started_at = _perf_counter()
         request_id = _resolve_http_request_id(self.headers.get("X-Request-Id"))
         if self.path != "/mcp":
             self.send_error(HTTPStatus.NOT_FOUND)
+            self._log_access(
+                request_id=request_id, status_code=HTTPStatus.NOT_FOUND, started_at=started_at
+            )
             return
 
         if not _is_json_content_type(self.headers.get("Content-Type")):
@@ -802,6 +815,11 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
                 _rpc_error(None, -32600, "Invalid Request: Content-Type must be application/json"),
                 status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 request_id=request_id,
+            )
+            self._log_access(
+                request_id=request_id,
+                status_code=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                started_at=started_at,
             )
             return
 
@@ -813,12 +831,20 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
                     status=HTTPStatus.BAD_REQUEST,
                     request_id=request_id,
                 )
+                self._log_access(
+                    request_id=request_id, status_code=HTTPStatus.BAD_REQUEST, started_at=started_at
+                )
                 return
             if content_length > MAX_REQUEST_BODY_BYTES:
                 self._send_json(
                     _rpc_error(None, -32600, "Invalid Request: body is too large"),
                     status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
                     request_id=request_id,
+                )
+                self._log_access(
+                    request_id=request_id,
+                    status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    started_at=started_at,
                 )
                 return
 
@@ -829,20 +855,26 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
                 self.send_response(HTTPStatus.NO_CONTENT)
                 self.send_header("X-Request-Id", request_id)
                 self.end_headers()
+                self._log_access(
+                    request_id=request_id, status_code=HTTPStatus.NO_CONTENT, started_at=started_at
+                )
                 return
             self._send_json(response_payload, request_id=request_id)
+            self._log_access(request_id=request_id, status_code=HTTPStatus.OK, started_at=started_at)
         except ValueError:
             self._send_json(
                 _rpc_error(None, -32600, "Invalid Request: invalid Content-Length header"),
                 status=HTTPStatus.BAD_REQUEST,
                 request_id=request_id,
             )
+            self._log_access(request_id=request_id, status_code=HTTPStatus.BAD_REQUEST, started_at=started_at)
         except json.JSONDecodeError:
             self._send_json(
                 _rpc_error(None, -32700, "Parse error"),
                 status=HTTPStatus.BAD_REQUEST,
                 request_id=request_id,
             )
+            self._log_access(request_id=request_id, status_code=HTTPStatus.BAD_REQUEST, started_at=started_at)
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Keep server output concise in local development.
@@ -876,10 +908,55 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
         accept_encoding = str(self.headers.get("Accept-Encoding") or "").lower()
         return "gzip" in accept_encoding
 
+    def _log_access(self, *, request_id: str, status_code: HTTPStatus, started_at: float) -> None:
+        latency_ms = (_perf_counter() - started_at) * 1000.0
+        client_host = str(self.client_address[0]) if self.client_address else ""
+        client_port = int(self.client_address[1]) if self.client_address else 0
+        user_agent = str(self.headers.get("User-Agent") or "")
+        logger.info(
+            (
+                "mcp_http_access method=%s path=%s status=%s latency_ms=%.3f "
+                "client_ip=%s client_port=%s request_id=%s user_agent=%s"
+            ),
+            self.command,
+            self.path,
+            int(status_code),
+            latency_ms,
+            client_host,
+            client_port,
+            request_id,
+            user_agent,
+            extra={
+                "request_id": request_id,
+                "method": self.command,
+                "path": self.path,
+                "status_code": int(status_code),
+                "latency_ms": round(latency_ms, 3),
+                "client_ip": client_host,
+                "client_port": client_port,
+                "user_agent": user_agent,
+            },
+        )
+
+
+def _configure_runtime_logging() -> None:
+    raw_level = str(os.getenv("MCP_LOG_LEVEL", "INFO")).strip().upper()
+    log_level = getattr(logging, raw_level, logging.INFO)
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        )
+    else:
+        root_logger.setLevel(log_level)
+    logger.setLevel(log_level)
+
 
 def run_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Run MCP HTTP server."""
 
+    _configure_runtime_logging()
     server = ThreadingHTTPServer((host, port), MCPHttpHandler)
     print(f"MCP server started on http://{host}:{port}/mcp")
     server.serve_forever()
