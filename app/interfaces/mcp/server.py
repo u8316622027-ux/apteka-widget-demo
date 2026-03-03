@@ -495,12 +495,25 @@ def handle_rpc_request(
 
     if method == "resources/list":
         resources = []
-        for uri, relative_path in _widget_resource_index().items():
+        for uri, resource_data in _widget_resource_index().items():
+            relative_path = str(resource_data["path"])
+            description = str(resource_data["description"])
+            ui_domain = str(resource_data["domain"])
+            resource_domains = list(resource_data["resource_domains"])
             resources.append(
                 {
                     "uri": uri,
                     "name": relative_path,
                     "mimeType": "text/html+skybridge",
+                    "description": description,
+                    "_meta": {
+                        "openai/widgetDescription": description,
+                        "openai/widgetDomain": ui_domain,
+                        "openai/widgetCSP": {
+                            "connect_domains": [],
+                            "resource_domains": resource_domains,
+                        },
+                    },
                 }
             )
         return {
@@ -516,10 +529,11 @@ def handle_rpc_request(
 
         resource_index = _widget_resource_index()
         normalized_uri = uri.strip()
-        relative_path = resource_index.get(normalized_uri)
-        if relative_path is None:
+        resource_data = resource_index.get(normalized_uri)
+        if resource_data is None:
             return _rpc_error(request_id, -32602, f"Resource not found: {normalized_uri}")
 
+        relative_path = str(resource_data["path"])
         file_path = Path(__file__).resolve().parents[2] / "widgets" / relative_path
         try:
             html_text = file_path.read_text(encoding="utf-8")
@@ -535,6 +549,14 @@ def handle_rpc_request(
                         "uri": normalized_uri,
                         "mimeType": "text/html+skybridge",
                         "text": html_text,
+                        "_meta": {
+                            "openai/widgetDescription": str(resource_data["description"]),
+                            "openai/widgetDomain": str(resource_data["domain"]),
+                            "openai/widgetCSP": {
+                                "connect_domains": [],
+                                "resource_domains": list(resource_data["resource_domains"]),
+                            },
+                        },
                     }
                 ]
             },
@@ -695,9 +717,9 @@ def _rpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
-def _widget_resource_index() -> dict[str, str]:
+def _widget_resource_index() -> dict[str, dict[str, Any]]:
     registry = _get_default_tool_registry()
-    mapping: dict[str, str] = {}
+    mapping: dict[str, dict[str, Any]] = {}
     for tool in registry.values():
         uri = tool.output_template.strip()
         if not uri.startswith("ui://widget/"):
@@ -705,7 +727,18 @@ def _widget_resource_index() -> dict[str, str]:
         relative_path = uri.removeprefix("ui://widget/").strip()
         if not relative_path:
             continue
-        mapping[uri] = relative_path
+        ui_domain = str(tool.ui.get("domain") or "").strip()
+        csp = tool.ui.get("csp") if isinstance(tool.ui.get("csp"), dict) else {}
+        resource_domains = csp.get("resourceDomains")
+        if not isinstance(resource_domains, list):
+            resource_domains = []
+        normalized_resource_domains = [str(domain).strip() for domain in resource_domains if str(domain).strip()]
+        mapping[uri] = {
+            "path": relative_path,
+            "description": tool.description,
+            "domain": ui_domain,
+            "resource_domains": normalized_resource_domains,
+        }
     return mapping
 
 
