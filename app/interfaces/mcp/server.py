@@ -364,9 +364,7 @@ def handle_rpc_request(
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
-                    "content": [
-                        {"type": "text", "text": json.dumps(result_payload, ensure_ascii=False)}
-                    ],
+                    "content": [{"type": "text", "text": _build_tool_success_text(result_payload)}],
                     "structuredContent": result_payload,
                     "isError": False,
                 },
@@ -541,6 +539,15 @@ def _classify_tool_error(exc: Exception) -> dict[str, Any]:
     return {"type": "tool_execution_error", "message": message, "retriable": False}
 
 
+def _build_tool_success_text(result_payload: dict[str, Any]) -> str:
+    summary: dict[str, Any] = {"ok": True, "keys": sorted(result_payload.keys())}
+    if "count" in result_payload:
+        summary["count"] = result_payload.get("count")
+    if "status" in result_payload:
+        summary["status"] = result_payload.get("status")
+    return json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+
+
 def _resolve_http_request_id(incoming_request_id: str | None) -> str:
     if incoming_request_id is None:
         return uuid4().hex
@@ -554,6 +561,7 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
     """HTTP transport for minimal MCP JSON-RPC methods."""
 
     server_version = "AptekaMCP/0.1"
+    protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:  # noqa: N802
         request_id = _resolve_http_request_id(self.headers.get("X-Request-Id"))
