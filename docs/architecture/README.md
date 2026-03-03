@@ -21,6 +21,12 @@
 - `app/interfaces/mcp/fastapi_server.py`:
   - optional FastAPI транспорт с async offload JSON-RPC dispatch
 
+## Frontend Stack
+- FastAPI отдает widget HTML как статические страницы/ресурсы.
+- UI слой для виджетов: `Alpine.js` (легкая декларативная логика в HTML).
+- Стили: `Tailwind CSS` (locally built) + локальные widget-стили.
+- Tailwind собирается локально из `app/widgets/styles/tailwind.input.css` в `app/widgets/styles/tailwind.css`.
+
 ## MCP Transport Endpoints
 - Основной RPC endpoint: `POST /mcp`
 - Healthcheck: `GET /health`
@@ -84,6 +90,9 @@
 ```bash
 python -m app.interfaces.mcp.server --host 0.0.0.0 --port 8000
 python -m app.interfaces.mcp.fastapi_server --host 0.0.0.0 --port 8001
+npm run tw:build
+# для разработки UI
+npm run tw:watch
 ```
 
 ## Quality Gates

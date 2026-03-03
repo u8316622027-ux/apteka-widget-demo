@@ -35,7 +35,9 @@ class WidgetTemplateTests(unittest.TestCase):
         )
         for template_name in template_names:
             template_text = (widget_dir / template_name).read_text(encoding="utf-8")
-            self.assertIn("widget-shell.css", template_text)
+            self.assertIn("tailwind.css", template_text)
             self.assertIn("widget-shell.js", template_text)
             self.assertIn('data-widget-shell="', template_text)
+            self.assertIn("x-data=", template_text)
+            self.assertIn("alpinejs", template_text)
 

@@ -1,12 +1,14 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Cart Mock Widget</title>
+    <link rel="stylesheet" href="./styles/tailwind.css" />
     <link rel="stylesheet" href="./styles/widget-shell.css" />
+      <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   </head>
-  <body>
+  <body x-data="{ tool: document.title }">
     <main class="widget-shell" data-widget-shell="my_cart">
       <header class="widget-header">
         <span class="widget-label">my_cart</span>
@@ -27,3 +29,5 @@
     <script src="./scripts/widget-shell.js"></script>
   </body>
 </html>
+
+
