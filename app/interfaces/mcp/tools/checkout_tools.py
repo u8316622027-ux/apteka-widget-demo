@@ -6,11 +6,15 @@ import json
 import re
 from pathlib import Path
 from threading import Lock
+from time import monotonic as _monotonic
 from typing import Any, Callable, Protocol
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen as default_urlopen
 
+from app.core.config import get_settings
 from app.domain.cart.repository import CartApiRepository, CartTokenStore
+from app.domain.checkout.entities import CheckoutContact
+from app.domain.checkout.service import CheckoutValidationService
 from app.interfaces.mcp.tools.cart_tools import my_cart
 from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 
@@ -22,7 +26,8 @@ APTEKA_CONFIRM_ORDER_URL = (
     "https://stage.apteka.md/api/v1/front/order/confirm-order-by-using-mobile"
 )
 _CHECKOUT_REFERENCE_CACHE_LOCK = Lock()
-_CHECKOUT_REFERENCE_CACHE: dict[str, list[dict[str, Any]]] | None = None
+_CHECKOUT_REFERENCE_CACHE: tuple[float, dict[str, list[dict[str, Any]]]] | None = None
+CHECKOUT_REFERENCE_CACHE_TTL_SECONDS = 300.0
 _ALLOWED_PHONE_RULES_LOCK = Lock()
 _ALLOWED_PHONE_RULES_CACHE: list[dict[str, Any]] | None = None
 _SIMPLE_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -932,44 +937,18 @@ def _extract_pharmacy_city_id(pharmacy: dict[str, Any], region_id: int) -> int |
 
 
 def _validate_pickup_contact(contact: dict[str, object]) -> list[dict[str, str]]:
-    errors: list[dict[str, str]] = []
-    first_name = str(contact.get("first_name") or "").strip()
-    last_name = str(contact.get("last_name") or "").strip()
-    phone = str(contact.get("phone") or "").strip()
-    email = str(contact.get("email") or "").strip()
-
-    if len(first_name) < 3:
-        errors.append({"field": "first_name", "message": "First name must be at least 3 characters"})
-
-    if last_name and len(last_name) < 3:
-        errors.append({"field": "last_name", "message": "Last name must be at least 3 characters"})
-
-    if not _is_valid_phone(phone):
-        errors.append({"field": "phone", "message": "Phone number is invalid"})
-
-    if email and not _is_valid_email(email):
-        errors.append({"field": "email", "message": "Email is invalid"})
-    return errors
+    service = _build_checkout_validation_service()
+    return service.validate_pickup_contact(CheckoutContact.from_payload(contact))
 
 
 def _normalize_courier_address(address: dict[str, object]) -> dict[str, str]:
-    return {
-        "street": str(address.get("street") or "").strip(),
-        "house_number": str(address.get("house_number") or "").strip(),
-        "apartment": str(address.get("apartment") or "").strip(),
-        "entrance": str(address.get("entrance") or "").strip(),
-        "floor": str(address.get("floor") or "").strip(),
-        "intercom_code": str(address.get("intercom_code") or "").strip(),
-    }
+    service = _build_checkout_validation_service()
+    return service.normalize_courier_address(address)
 
 
 def _validate_courier_address(address: dict[str, str]) -> list[dict[str, str]]:
-    errors: list[dict[str, str]] = []
-    if not address["street"]:
-        errors.append({"field": "street", "message": "Street is required"})
-    if not address["house_number"]:
-        errors.append({"field": "house_number", "message": "House number is required"})
-    return errors
+    service = _build_checkout_validation_service()
+    return service.validate_courier_address(service.normalize_courier_address(address))
 
 
 def _is_valid_phone(phone: str) -> bool:
@@ -994,21 +973,11 @@ def _validate_confirmation_fields(
     payment_method: str | None,
     terms_accepted: bool | None,
 ) -> list[dict[str, str]]:
-    errors: list[dict[str, str]] = []
-    normalized_payment_method = str(payment_method or "").strip()
-    if not normalized_payment_method:
-        errors.append({"field": "payment_method", "message": "Payment method is required"})
-    elif normalized_payment_method not in _PAYMENT_METHOD_IDS:
-        errors.append({"field": "payment_method", "message": "Unsupported payment method"})
-
-    if terms_accepted is not True:
-        errors.append(
-            {
-                "field": "terms_accepted",
-                "message": "Terms agreement is required",
-            }
-        )
-    return errors
+    service = _build_checkout_validation_service()
+    return service.validate_confirmation_fields(
+        payment_method=payment_method,
+        terms_accepted=terms_accepted,
+    )
 
 
 def _build_pickup_confirm_payload(
@@ -1048,19 +1017,48 @@ def _load_cached_checkout_reference_data(
 ) -> dict[str, list[dict[str, Any]]]:
     global _CHECKOUT_REFERENCE_CACHE
     with _CHECKOUT_REFERENCE_CACHE_LOCK:
-        if _CHECKOUT_REFERENCE_CACHE is None:
-            _CHECKOUT_REFERENCE_CACHE = {
+        now = _monotonic()
+        if _CHECKOUT_REFERENCE_CACHE is not None:
+            expires_at, payload = _CHECKOUT_REFERENCE_CACHE
+            if now < expires_at:
+                return payload
+
+        payload = {
                 "regions": repository.get_regions(),
                 "cities_without_regions": repository.get_cities_without_regions(),
                 "pharmacies": repository.get_pharmacies(),
             }
-        return _CHECKOUT_REFERENCE_CACHE
+        ttl_seconds = _get_checkout_reference_cache_ttl_seconds()
+        _CHECKOUT_REFERENCE_CACHE = (now + ttl_seconds, payload)
+        return payload
 
 
 def _clear_checkout_reference_cache() -> None:
     global _CHECKOUT_REFERENCE_CACHE
     with _CHECKOUT_REFERENCE_CACHE_LOCK:
         _CHECKOUT_REFERENCE_CACHE = None
+
+
+def _build_checkout_validation_service() -> CheckoutValidationService:
+    return CheckoutValidationService(
+        phone_validator=_is_valid_phone,
+        email_validator=_is_valid_email,
+        payment_method_ids=set(_PAYMENT_METHOD_IDS),
+    )
+
+
+def _get_checkout_reference_cache_ttl_seconds() -> float:
+    settings = get_settings()
+    ttl_seconds = float(
+        getattr(
+            settings,
+            "mcp_checkout_reference_cache_ttl_seconds",
+            CHECKOUT_REFERENCE_CACHE_TTL_SECONDS,
+        )
+    )
+    if ttl_seconds <= 0:
+        return CHECKOUT_REFERENCE_CACHE_TTL_SECONDS
+    return ttl_seconds
 
 
 def _extract_collection(payload: Any) -> list[dict[str, Any]]:

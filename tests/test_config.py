@@ -23,6 +23,7 @@ class ConfigTests(unittest.TestCase):
                     "CART_TOKEN_TTL_SECONDS=321",
                     "MCP_SEARCH_CACHE_TTL_SECONDS=17",
                     "MCP_TRACKING_CACHE_TTL_SECONDS=9",
+                    "MCP_CHECKOUT_REFERENCE_CACHE_TTL_SECONDS=222",
                     "MCP_TOOL_CACHE_MAX_ENTRIES=77",
                 ]
             ),
@@ -39,6 +40,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.cart_token_ttl_seconds, 321)
         self.assertEqual(settings.mcp_search_cache_ttl_seconds, 17)
         self.assertEqual(settings.mcp_tracking_cache_ttl_seconds, 9)
+        self.assertEqual(settings.mcp_checkout_reference_cache_ttl_seconds, 222)
         self.assertEqual(settings.mcp_tool_cache_max_entries, 77)
 
     def test_get_settings_is_cached(self) -> None:

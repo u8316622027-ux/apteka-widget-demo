@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from app.core.config import get_settings
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
+from app.domain.cart.service import _SESSION_LOCKS
 from app.interfaces.mcp.tools.cart_tools import (
     AptekaCartRepository,
     InMemoryCartTokenStore,
@@ -59,6 +60,7 @@ class CartToolsTests(unittest.TestCase):
     def tearDown(self) -> None:
         get_settings.cache_clear()
         _clear_default_token_store()
+        _SESSION_LOCKS.clear()
 
     def test_my_cart_creates_session_when_missing(self) -> None:
         repository = FakeCartRepository()
@@ -255,6 +257,20 @@ class CartToolsTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(repository.max_concurrent, 1)
+
+    def test_add_to_my_cart_releases_session_lock_after_batch_update(self) -> None:
+        repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        session = my_cart(repository=repository, token_store=token_store)
+
+        add_to_my_cart(
+            items=[{"product_id": "16174", "quantity": 1}],
+            cart_session_id=str(session["cart_session_id"]),
+            repository=repository,
+            token_store=token_store,
+        )
+
+        self.assertEqual(_SESSION_LOCKS, {})
 
     def test_add_to_my_cart_rejects_negative_quantity(self) -> None:
         repository = FakeCartRepository()

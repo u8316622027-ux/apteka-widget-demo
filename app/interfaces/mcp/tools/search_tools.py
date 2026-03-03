@@ -42,6 +42,8 @@ class AptekaSearchRepository(ProductSearchRepository):
             response_payload = json.loads(response.read().decode("utf-8"))
 
         items = _extract_items(response_payload)
+        if limit is not None:
+            items = items[:limit]
         return [_map_product(item) for item in items]
 
 
