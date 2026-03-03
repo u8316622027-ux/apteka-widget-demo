@@ -55,6 +55,11 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn('data-inline-widget-style="products"', template_text)
         self.assertIn(".search-mock", template_text)
 
+    def test_products_template_has_two_column_tablet_layout(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertIn("grid-template-columns:repeat(2,minmax(0,1fr))", template_text)
+        self.assertIn("@media (max-width:620px)", template_text)
+
 
 if __name__ == "__main__":
     unittest.main()
