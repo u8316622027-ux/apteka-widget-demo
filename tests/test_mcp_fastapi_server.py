@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import gzip
 import json
 import unittest
@@ -10,11 +11,28 @@ from unittest.mock import patch
 from app.interfaces.mcp.fastapi_server import (
     _build_json_response_bytes,
     _client_accepts_gzip,
+    _dispatch_jsonrpc_in_thread,
     create_fastapi_app,
 )
 
 
 class MCPFastAPIServerTests(unittest.TestCase):
+    def test_dispatch_jsonrpc_in_thread_uses_asyncio_to_thread(self) -> None:
+        async def run_case() -> None:
+            with patch(
+                "app.interfaces.mcp.fastapi_server.asyncio.to_thread",
+                return_value={"jsonrpc": "2.0", "id": 1, "result": {"ok": True}},
+            ) as mocked_to_thread:
+                response = await _dispatch_jsonrpc_in_thread(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                    registry=None,
+                    request_id="req-1",
+                )
+            mocked_to_thread.assert_called_once()
+            self.assertEqual(response["id"], 1)
+
+        asyncio.run(run_case())
+
     def test_client_accepts_gzip_is_case_insensitive(self) -> None:
         self.assertTrue(_client_accepts_gzip("gzip"))
         self.assertTrue(_client_accepts_gzip("br, GZIP"))

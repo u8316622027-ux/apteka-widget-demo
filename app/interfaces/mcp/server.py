@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import monotonic as _monotonic
+from time import perf_counter as _perf_counter
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -32,6 +33,15 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 _TOOL_RESPONSE_CACHE_LOCK = threading.Lock()
 _TOOL_RESPONSE_CACHE: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+_RUNTIME_METRICS_LOCK = threading.Lock()
+_RUNTIME_METRICS: dict[str, Any] = {
+    "rpc_requests_total": 0,
+    "tool_calls_total": 0,
+    "tool_errors_total": 0,
+    "cache_hits_total": 0,
+    "cache_misses_total": 0,
+    "tools": {},
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,6 +336,67 @@ def _reset_server_caches_for_tests() -> None:
         _TOOL_RESPONSE_CACHE.clear()
 
 
+def _reset_runtime_metrics_for_tests() -> None:
+    with _RUNTIME_METRICS_LOCK:
+        _RUNTIME_METRICS["rpc_requests_total"] = 0
+        _RUNTIME_METRICS["tool_calls_total"] = 0
+        _RUNTIME_METRICS["tool_errors_total"] = 0
+        _RUNTIME_METRICS["cache_hits_total"] = 0
+        _RUNTIME_METRICS["cache_misses_total"] = 0
+        _RUNTIME_METRICS["tools"] = {}
+
+
+def get_runtime_metrics() -> dict[str, Any]:
+    with _RUNTIME_METRICS_LOCK:
+        tools_snapshot: dict[str, dict[str, Any]] = {}
+        tools = _RUNTIME_METRICS.get("tools", {})
+        for tool_name, payload in tools.items():
+            calls = int(payload.get("calls", 0))
+            latency_total_ms = float(payload.get("latency_total_ms", 0.0))
+            avg_latency_ms = (latency_total_ms / calls) if calls > 0 else 0.0
+            tools_snapshot[tool_name] = {
+                "calls": calls,
+                "errors": int(payload.get("errors", 0)),
+                "avg_latency_ms": round(avg_latency_ms, 3),
+            }
+        return {
+            "rpc_requests_total": int(_RUNTIME_METRICS["rpc_requests_total"]),
+            "tool_calls_total": int(_RUNTIME_METRICS["tool_calls_total"]),
+            "tool_errors_total": int(_RUNTIME_METRICS["tool_errors_total"]),
+            "cache_hits_total": int(_RUNTIME_METRICS["cache_hits_total"]),
+            "cache_misses_total": int(_RUNTIME_METRICS["cache_misses_total"]),
+            "tools": tools_snapshot,
+        }
+
+
+def _record_rpc_request() -> None:
+    with _RUNTIME_METRICS_LOCK:
+        _RUNTIME_METRICS["rpc_requests_total"] = int(_RUNTIME_METRICS["rpc_requests_total"]) + 1
+
+
+def _record_tool_result(
+    tool_name: str, *, latency_ms: float, errored: bool, cache_hit: bool | None = None
+) -> None:
+    with _RUNTIME_METRICS_LOCK:
+        _RUNTIME_METRICS["tool_calls_total"] = int(_RUNTIME_METRICS["tool_calls_total"]) + 1
+        if errored:
+            _RUNTIME_METRICS["tool_errors_total"] = int(_RUNTIME_METRICS["tool_errors_total"]) + 1
+        if cache_hit is True:
+            _RUNTIME_METRICS["cache_hits_total"] = int(_RUNTIME_METRICS["cache_hits_total"]) + 1
+        if cache_hit is False:
+            _RUNTIME_METRICS["cache_misses_total"] = int(_RUNTIME_METRICS["cache_misses_total"]) + 1
+
+        tools = _RUNTIME_METRICS.setdefault("tools", {})
+        tool_payload = tools.setdefault(
+            tool_name,
+            {"calls": 0, "errors": 0, "latency_total_ms": 0.0},
+        )
+        tool_payload["calls"] = int(tool_payload.get("calls", 0)) + 1
+        if errored:
+            tool_payload["errors"] = int(tool_payload.get("errors", 0)) + 1
+        tool_payload["latency_total_ms"] = float(tool_payload.get("latency_total_ms", 0.0)) + latency_ms
+
+
 def handle_rpc_request(
     request_payload: dict[str, Any],
     *,
@@ -336,6 +407,7 @@ def handle_rpc_request(
 
     if not isinstance(request_payload, dict):
         return _rpc_error(None, -32600, "Invalid Request")
+    _record_rpc_request()
 
     active_registry = registry or _get_default_tool_registry()
     request_id = request_payload.get("id")
@@ -398,9 +470,16 @@ def handle_rpc_request(
 
         cache_ttl_seconds = _get_tool_cache_ttl_seconds(tool_name)
         cache_key = _build_tool_cache_key(tool_name, arguments)
+        started_at = _perf_counter()
         if cache_ttl_seconds is not None and cache_key is not None:
             cached_payload = _get_cached_tool_payload(cache_key)
             if cached_payload is not None:
+                _record_tool_result(
+                    tool_name,
+                    latency_ms=(_perf_counter() - started_at) * 1000.0,
+                    errored=False,
+                    cache_hit=True,
+                )
                 return {
                     "jsonrpc": "2.0",
                     "id": request_id,
@@ -419,6 +498,12 @@ def handle_rpc_request(
                     result_payload,
                     ttl_seconds=cache_ttl_seconds,
                 )
+            _record_tool_result(
+                tool_name,
+                latency_ms=(_perf_counter() - started_at) * 1000.0,
+                errored=False,
+                cache_hit=False if cache_key is not None else None,
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -429,6 +514,12 @@ def handle_rpc_request(
                 },
             }
         except Exception as exc:  # noqa: BLE001
+            _record_tool_result(
+                tool_name,
+                latency_ms=(_perf_counter() - started_at) * 1000.0,
+                errored=True,
+                cache_hit=False if cache_key is not None else None,
+            )
             error_payload = _classify_tool_error(exc)
             logger.exception(
                 "mcp_tool_call_failed",
@@ -694,6 +785,9 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
         request_id = _resolve_http_request_id(self.headers.get("X-Request-Id"))
         if self.path == "/health":
             self._send_json({"status": "ok"}, request_id=request_id)
+            return
+        if self.path == "/metrics":
+            self._send_json(get_runtime_metrics(), request_id=request_id)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
