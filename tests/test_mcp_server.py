@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.client
+import gzip
 import json
 import threading
 import unittest
@@ -600,6 +601,39 @@ class MCPHttpTransportRequestIdTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("x-request-id", headers)
         self.assertTrue(len(headers["x-request-id"]) >= 8)
+
+    def test_http_response_uses_gzip_for_large_payload_when_accepted(self) -> None:
+        status, headers, raw_body = self._post_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "search_products", "arguments": {"query": "q"}},
+            },
+            headers={"Accept-Encoding": "gzip"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("content-encoding"), "gzip")
+        decoded = gzip.decompress(raw_body).decode("utf-8")
+        payload = json.loads(decoded)
+        self.assertEqual(payload["id"], 3)
+        self.assertIn("result", payload)
+
+    def test_http_response_skips_gzip_when_not_accepted(self) -> None:
+        status, headers, raw_body = self._post_mcp(
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "search_products", "arguments": {"query": "q"}},
+            },
+            headers={"Accept-Encoding": "br"},
+        )
+        self.assertEqual(status, 200)
+        self.assertNotIn("content-encoding", headers)
+        decoded = raw_body.decode("utf-8")
+        payload = json.loads(decoded)
+        self.assertEqual(payload["id"], 4)
 
 
 if __name__ == "__main__":
