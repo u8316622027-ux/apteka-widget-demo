@@ -8,34 +8,59 @@
     <link rel="stylesheet" href="./styles/widget-shell.css" />
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style data-inline-widget-style="products">
-      html,body{margin:0;padding:0;background:transparent}
-      body{font-family:"Segoe UI","Trebuchet MS",sans-serif;padding:12px;color:#f4f7ff;overflow-x:hidden}
-      .widget-shell.search-mock{width:min(100%,900px);border-radius:16px;background:#1a1d23;border:1px solid rgba(32,64,128,.5);padding:16px;overflow:hidden}
-      .search-caption{font-size:15px;font-weight:600;margin-bottom:16px;color:#e4e9f7}
-      .brand-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-      .brand-pill{width:24px;height:24px;border-radius:999px;background:#2468ac;color:#fff;font-weight:700;display:grid;place-items:center;font-size:13px}
-      .brand-name{color:#d2dbef;font-size:28px}
-      .search-toolbar{display:grid;grid-template-columns:140px 1fr 58px;gap:12px;align-items:center;margin-bottom:14px}
-      .search-logo{display:flex;align-items:center;gap:8px;color:#1a63d5}
-      .logo-mark{color:#ef1148;font-size:28px;line-height:1}
-      .logo-text{font-size:35px;font-weight:600}
-      .search-input-wrap{position:relative}
-      .search-input-wrap input{width:100%;height:44px;border-radius:999px;border:1px solid #1f4da1;background:#07173d;color:#c6d9ff;padding:0 56px 0 16px;outline:none}
-      .search-icon{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:31px;height:31px;border-radius:999px;background:#1265ec;display:grid;place-items:center;color:#fff}
-      .cart-icon{width:44px;height:44px;border-radius:999px;border:1px solid #2b4e89;background:#0a1632;color:#eef3ff;font-size:22px}
-      .product-carousel{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
-      .product-card{border-radius:18px;border:1px solid #22488e;background:#06112a;padding:11px}
-      .product-image{width:100%;height:148px;border-radius:12px;background:linear-gradient(160deg,#e9ecf2,#cfd4df);margin-bottom:9px}
-      .product-card h3{margin:0 0 8px;font-size:18px;line-height:1.2;min-height:66px}
-      .manufacturer{margin:0 0 9px;color:#a8b3c7;font-size:13px}
-      .old-price{margin:0 0 5px;color:#f95757;text-decoration:line-through;font-size:14px}
-      .discount{margin-left:5px;text-decoration:none;display:inline-block;background:#ef232f;color:#fff;border-radius:5px;padding:0 5px;font-weight:700}
-      .new-price{margin:0 0 12px;font-size:22px;color:#8bc4ff;font-weight:800}
-      .product-card button{width:100%;border:none;border-radius:10px;height:38px;background:#ef232f;color:#fff;font-size:15px;font-weight:700}
-      .carousel-arrow{position:absolute;top:45%;width:39px;height:39px;border-radius:999px;border:1px solid #2b4e89;background:#0a1632;color:#fff;font-size:26px;display:grid;place-items:center}
-      .carousel-arrow.left{left:8px}.carousel-arrow.right{right:8px}.muted-card{display:none}
-      @media (max-width:620px){.logo-text{font-size:28px}.search-toolbar{grid-template-columns:120px 1fr 48px}.product-carousel{grid-template-columns:1fr}.carousel-arrow.left{left:6px}.carousel-arrow.right{right:6px}}
-      @media (max-width:560px){.search-toolbar{grid-template-columns:1fr}.search-logo{justify-content:space-between}.cart-icon{justify-self:end}.product-card h3{min-height:auto}}
+      html, body { margin: 0; padding: 0; min-height: 100%; background: #1f2229; }
+      body { font-family: "Segoe UI", "Trebuchet MS", sans-serif; color: #f4f7ff; overflow-x: hidden; display: flex; justify-content: center; padding: 16px; }
+      .widget-shell.search-mock { width: min(100%, 920px); border-radius: 16px; background: #1a1d23; border: 1px solid rgba(32, 64, 128, 0.5); padding: 16px 16px 22px; overflow: hidden; }
+      .search-caption { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #e4e9f7; }
+      .brand-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+      .brand-pill { width: 24px; height: 24px; border-radius: 999px; background: #2468ac; color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 13px; }
+      .brand-name { color: #d2dbef; font-size: 34px; line-height: 1; }
+      .search-toolbar { display: grid; grid-template-columns: 140px 1fr 58px; gap: 12px; align-items: center; margin-bottom: 14px; }
+      .search-logo { display: flex; align-items: center; gap: 8px; color: #1a63d5; }
+      .logo-mark { color: #ef1148; font-size: 46px; line-height: 0.75; }
+      .logo-text { font-size: 43px; font-weight: 600; line-height: 1; }
+      .search-input-wrap { position: relative; }
+      .search-input-wrap input { width: 100%; height: 44px; border-radius: 999px; border: 1px solid #1f4da1; background: #07173d; color: #c6d9ff; padding: 0 56px 0 16px; outline: none; }
+      .search-icon { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 31px; height: 31px; border-radius: 999px; background: #1265ec; display: grid; place-items: center; color: #fff; }
+      .cart-icon { width: 44px; height: 44px; border-radius: 999px; border: 1px solid #2b4e89; background: #0a1632; color: #eef3ff; font-size: 22px; }
+      .carousel-frame { position: relative; overflow: hidden; }
+      .product-carousel { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: calc(100% + 190px); gap: 14px; align-items: start; }
+      .product-card { border-radius: 18px; border: 1px solid #22488e; background: #06112a; padding: 11px; min-height: 372px; }
+      .product-image { width: 100%; height: 148px; border-radius: 12px; background: linear-gradient(160deg, #e9ecf2, #cfd4df); margin-bottom: 9px; }
+      .product-card h3 { margin: 0 0 8px; font-size: 36px; line-height: 1.15; min-height: 124px; }
+      .manufacturer { margin: 0 0 9px; color: #a8b3c7; font-size: 24px; }
+      .old-price { margin: 0 0 5px; color: #f95757; text-decoration: line-through; font-size: 24px; }
+      .discount { margin-left: 5px; text-decoration: none; display: inline-block; background: #ef232f; color: #fff; border-radius: 5px; padding: 0 5px; font-weight: 700; }
+      .new-price { margin: 0 0 12px; font-size: 42px; color: #8bc4ff; font-weight: 800; line-height: 1; }
+      .product-card button { width: 100%; border: none; border-radius: 10px; height: 38px; background: #ef232f; color: #fff; font-size: 27px; font-weight: 700; }
+      .carousel-arrow { position: absolute; top: 47%; width: 39px; height: 39px; border-radius: 999px; border: 1px solid #2b4e89; background: #0a1632; color: #fff; font-size: 26px; display: grid; place-items: center; z-index: 2; }
+      .carousel-arrow.left { left: -2px; }
+      .carousel-arrow.right { right: 182px; }
+      .muted-card { opacity: 1; }
+      .carousel-bottom { display: flex; justify-content: center; margin: 14px 0 12px; }
+      .center-indicator { width: 46px; height: 46px; border-radius: 999px; border: 1px solid #2b4e89; background: #0a1632; color: #fff; display: grid; place-items: center; font-size: 18px; }
+      .section-divider { border-top: 1px solid rgba(125, 144, 180, 0.35); margin-top: 8px; }
+      @media (max-width: 930px) {
+        .brand-name { font-size: 28px; }
+        .logo-text { font-size: 34px; }
+        .logo-mark { font-size: 38px; }
+        .search-toolbar { grid-template-columns: 120px 1fr 48px; }
+        .product-carousel { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+        .carousel-arrow.left { left: 6px; }
+        .carousel-arrow.right { right: 6px; }
+        .muted-card { display: none; }
+      }
+      @media (max-width: 620px) {
+        body { padding: 8px; }
+        .search-toolbar { grid-template-columns: 1fr; }
+        .search-logo { justify-content: space-between; }
+        .cart-icon { justify-self: end; }
+        .product-carousel { grid-template-columns: 1fr; }
+        .product-card h3 { min-height: auto; font-size: 22px; }
+        .manufacturer, .old-price { font-size: 14px; }
+        .new-price { font-size: 34px; }
+        .product-card button { font-size: 18px; }
+      }
     </style>
   </head>
   <body x-data="{ tool: 'search_products' }">
@@ -58,51 +83,65 @@
         <button class="cart-icon" disabled aria-label="Корзина">🛒</button>
       </section>
 
-      <section class="product-carousel">
-        <button class="carousel-arrow left" disabled aria-label="Предыдущий">‹</button>
-        <article class="product-card">
-          <div class="product-image"></div>
-          <h3>Аспирин плюс с, таб шип 400/240мг, N2x10</h3>
-          <p class="manufacturer">Bayer Consumer Care</p>
-          <p class="old-price">128.26 MDL <span class="discount">-8%</span></p>
-          <p class="new-price">117.99 MDL</p>
-          <button disabled>В корзину</button>
-        </article>
-        <article class="product-card">
-          <div class="product-image"></div>
-          <h3>Аспирин плюс с, таб шип 400/240мг, N2x5</h3>
-          <p class="manufacturer">Bayer Consumer Care</p>
-          <p class="old-price">92.61 MDL <span class="discount">-9%</span></p>
-          <p class="new-price">84.49 MDL</p>
-          <button disabled>В корзину</button>
-        </article>
-        <article class="product-card muted-card">
-          <div class="product-image"></div>
-          <h3>Аспирин кардио, таб, N28</h3>
-          <p class="manufacturer">Bayer S.A.</p>
-          <p class="old-price">34.11 MDL <span class="discount">-9%</span></p>
-          <p class="new-price">31.09 MDL</p>
-          <button disabled>В корзину</button>
-        </article>
-        <button class="carousel-arrow right" disabled aria-label="Следующий">›</button>
-      </section>
+      <div class="carousel-frame">
+        <section class="product-carousel">
+          <button class="carousel-arrow left" disabled aria-label="Предыдущий">‹</button>
+          <article class="product-card">
+            <div class="product-image"></div>
+            <h3>Аспирин плюс с, таб шип 400/240мг, N2x10</h3>
+            <p class="manufacturer">Bayer Consumer Care</p>
+            <p class="old-price">128.26 MDL <span class="discount">-8%</span></p>
+            <p class="new-price">117.99 MDL</p>
+            <button disabled>В корзину</button>
+          </article>
+          <article class="product-card">
+            <div class="product-image"></div>
+            <h3>Аспирин плюс с, таб шип 400/240мг, N2x5</h3>
+            <p class="manufacturer">Bayer Consumer Care</p>
+            <p class="old-price">92.61 MDL <span class="discount">-9%</span></p>
+            <p class="new-price">84.49 MDL</p>
+            <button disabled>В корзину</button>
+          </article>
+          <article class="product-card muted-card">
+            <div class="product-image"></div>
+            <h3>Аспирин кардио, таб, N28</h3>
+            <p class="manufacturer">Bayer S.A.</p>
+            <p class="old-price">34.11 MDL <span class="discount">-9%</span></p>
+            <p class="new-price">31.09 MDL</p>
+            <button disabled>В корзину</button>
+          </article>
+          <button class="carousel-arrow right" disabled aria-label="Следующий">›</button>
+        </section>
+      </div>
+
+      <div class="carousel-bottom">
+        <div class="center-indicator">◔</div>
+      </div>
+      <div class="section-divider"></div>
     </main>
     <script>
-      (function(){
-        const root=document.querySelector('[data-widget-shell]');
-        if(!root||typeof window.BroadcastChannel!=='function'){return;}
-        const widgetId=String(root.getAttribute('data-widget-shell')||'').trim();
-        if(!widgetId){return;}
-        const channel=new window.BroadcastChannel('apteka-widget-shell');
-        let active=true;
-        channel.onmessage=(event)=>{
-          const next=String(event?.data?.widgetId||'').trim();
-          if(!next||next===widgetId||!active){return;}
-          active=false;root.style.display='none';root.setAttribute('aria-hidden','true');
+      (function () {
+        const root = document.querySelector('[data-widget-shell]');
+        if (!root || typeof window.BroadcastChannel !== 'function') {
+          return;
+        }
+        const widgetId = String(root.getAttribute('data-widget-shell') || '').trim();
+        if (!widgetId) {
+          return;
+        }
+        const channel = new window.BroadcastChannel('apteka-widget-shell');
+        let active = true;
+        channel.onmessage = (event) => {
+          const next = String(event?.data?.widgetId || '').trim();
+          if (!next || next === widgetId || !active) {
+            return;
+          }
+          active = false;
+          root.style.display = 'none';
+          root.setAttribute('aria-hidden', 'true');
         };
-        channel.postMessage({widgetId,openedAt:Date.now()});
+        channel.postMessage({ widgetId, openedAt: Date.now() });
       })();
     </script>
   </body>
 </html>
-
