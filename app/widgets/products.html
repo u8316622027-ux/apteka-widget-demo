@@ -1,33 +1,62 @@
 ﻿<!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Products Mock Widget</title>
+    <title>Search Products Mock</title>
     <link rel="stylesheet" href="./styles/tailwind.css" />
     <link rel="stylesheet" href="./styles/widget-shell.css" />
-      <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   </head>
-  <body x-data="{ tool: document.title }">
-    <main class="widget-shell" data-widget-shell="search_products">
-      <header class="widget-header">
-        <span class="widget-label">search_products</span>
-        <h1 class="widget-title">Product Search Layout</h1>
-        <p class="widget-subtitle">Static mockup. Controls are intentionally disabled for this stage.</p>
-      </header>
-      <section class="widget-grid">
-        <article class="widget-card">
-          <h2>Search Bar Placeholder</h2>
-          <p>Free-text query input area mock.</p>
+  <body x-data="{ tool: 'search_products' }">
+    <main class="widget-shell search-mock" data-widget-shell="search_products">
+      <div class="search-caption">Вызываемый инструмент</div>
+      <div class="brand-row">
+        <div class="brand-pill">A</div>
+        <div class="brand-name">Apteka.md</div>
+      </div>
+
+      <section class="search-toolbar">
+        <div class="search-logo">
+          <span class="logo-mark">❤✚</span>
+          <span class="logo-text">apteka.md</span>
+        </div>
+        <label class="search-input-wrap">
+          <input type="text" placeholder="Искать по всем категориям" disabled />
+          <span class="search-icon">⌕</span>
+        </label>
+        <button class="cart-icon" disabled aria-label="Корзина">🛒</button>
+      </section>
+
+      <section class="product-carousel">
+        <button class="carousel-arrow left" disabled aria-label="Предыдущий">‹</button>
+        <article class="product-card">
+          <div class="product-image"></div>
+          <h3>Аспирин плюс с, таб шип 400/240мг, N2x10</h3>
+          <p class="manufacturer">Bayer Consumer Care</p>
+          <p class="old-price">128.26 MDL <span class="discount">-8%</span></p>
+          <p class="new-price">117.99 MDL</p>
+          <button disabled>В корзину</button>
         </article>
-        <article class="widget-card">
-          <h2>Results List Placeholder</h2>
-          <p>Product cards will be connected in the next step.</p>
+        <article class="product-card">
+          <div class="product-image"></div>
+          <h3>Аспирин плюс с, таб шип 400/240мг, N2x5</h3>
+          <p class="manufacturer">Bayer Consumer Care</p>
+          <p class="old-price">92.61 MDL <span class="discount">-9%</span></p>
+          <p class="new-price">84.49 MDL</p>
+          <button disabled>В корзину</button>
         </article>
+        <article class="product-card muted-card">
+          <div class="product-image"></div>
+          <h3>Аспирин кардио, таб, N28</h3>
+          <p class="manufacturer">Bayer S.A.</p>
+          <p class="old-price">34.11 MDL <span class="discount">-9%</span></p>
+          <p class="new-price">31.09 MDL</p>
+          <button disabled>В корзину</button>
+        </article>
+        <button class="carousel-arrow right" disabled aria-label="Следующий">›</button>
       </section>
     </main>
     <script src="./scripts/widget-shell.js"></script>
   </body>
 </html>
-
-
