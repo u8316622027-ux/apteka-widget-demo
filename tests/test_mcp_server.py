@@ -141,6 +141,36 @@ class MCPServerTests(unittest.TestCase):
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
 
+    def test_tools_call_success_uses_compact_summary_text_content(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            return_value={
+                "query": "цитрамон",
+                "count": 2,
+                "products": [{"id": 1, "name": "A"}, {"id": 2, "name": "B"}],
+                "extra": "x" * 1000,
+            },
+        ):
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 303,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_products",
+                        "arguments": {"query": "цитрамон", "limit": 5},
+                    },
+                },
+                registry=registry,
+            )
+
+        text_content = response["result"]["content"][0]["text"]
+        self.assertIn('"ok":true', text_content)
+        self.assertIn('"count":2', text_content)
+        self.assertNotIn('"products":[', text_content)
+        self.assertNotIn("xxxxxxxx", text_content)
+
     def test_unknown_method_returns_jsonrpc_error(self) -> None:
         registry = create_tool_registry()
 
