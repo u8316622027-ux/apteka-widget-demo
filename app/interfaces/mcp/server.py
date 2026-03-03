@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,8 @@ from app.interfaces.mcp.tools.search_tools import search_products
 from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,11 +364,29 @@ def handle_rpc_request(
                 },
             }
         except Exception as exc:  # noqa: BLE001
+            error_payload = _classify_tool_error(exc)
+            logger.exception(
+                "mcp_tool_call_failed",
+                extra={
+                    "request_id": request_id,
+                    "tool_name": tool_name,
+                    "error_type": error_payload["type"],
+                    "retriable": error_payload["retriable"],
+                },
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
                     "content": [{"type": "text", "text": str(exc)}],
+                    "structuredContent": {
+                        "error": {
+                            "type": error_payload["type"],
+                            "message": error_payload["message"],
+                            "retriable": error_payload["retriable"],
+                            "request_id": request_id,
+                        }
+                    },
                     "isError": True,
                 },
             }
@@ -494,6 +515,17 @@ def _is_json_content_type(content_type: str | None) -> bool:
         return False
     mime_type = content_type.split(";", 1)[0].strip().lower()
     return mime_type == "application/json"
+
+
+def _classify_tool_error(exc: Exception) -> dict[str, Any]:
+    message = str(exc).strip() or exc.__class__.__name__
+    if isinstance(exc, TimeoutError):
+        return {"type": "timeout_error", "message": message, "retriable": True}
+    if isinstance(exc, ConnectionError):
+        return {"type": "connection_error", "message": message, "retriable": True}
+    if isinstance(exc, ValueError):
+        return {"type": "validation_error", "message": message, "retriable": False}
+    return {"type": "tool_execution_error", "message": message, "retriable": False}
 
 
 class MCPHttpHandler(BaseHTTPRequestHandler):
