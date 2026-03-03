@@ -1,4 +1,4 @@
-# Feature: cart
+﻿# Feature: cart
 
 ## Goal
 Обеспечить устойчивую корзину пользователя для MCP tools (`my_cart`, `add_to_my_cart`) через серверную сессию `cart_session_id` и серверное хранение токена корзины.
@@ -29,7 +29,7 @@
   - Output: такой же snapshot как `my_cart`.
 
 ## Tool Behavior Rules (for AI)
-- Простое добавление одного товара: передавать только `product_id` (и `cart_session_id`, если есть). Сервер использует `/cart/add`.
+- Простое добавление одного товара: передавать только `product_id` (и `cart_session_id`, если есть). Сервер читает текущее состояние `/cart`, делает merge и отправляет итоговое абсолютное количество через `/cart/update`.
 - Массовые изменения (добавить несколько, изменить, удалить): передавать `items=[{product_id, quantity}, ...]`.
 - Для `items[].quantity` используется абсолютное значение:
   - было `4`, пользователь просит `2` -> отправить `quantity=2` (не `-2`).
@@ -38,10 +38,9 @@
 
 ## Dependencies
 - Apteka API:
-  - `GET https://stage.apteka.md/api/v1/front/cart` (создание корзины + токен)
-  - `GET https://stage.apteka.md/api/v1/front/cart` с `Authorization` (получение корзины)
-  - `POST https://stage.apteka.md/api/v1/front/cart/add` с `Authorization` и body `{"id":"<product_id>"}` (добавление +1)
-  - `POST https://stage.apteka.md/api/v1/front/cart/update` с `Authorization` и body `{"items":[{"product_id":"<product_id>","quantity":<target>}],"json":true}` (установка абсолютного количества; отправляется merged full-state)
+  - `GET {APTEKA_BASE_URL}/api/v1/front/cart` (создание корзины + токен)
+  - `GET {APTEKA_BASE_URL}/api/v1/front/cart` с `Authorization` (получение корзины)
+  - `POST {APTEKA_BASE_URL}/api/v1/front/cart/update` с `Authorization` и body `{"items":[{"product_id":"<product_id>","quantity":<target>}],"json":true}` (установка абсолютного количества; отправляется merged full-state)
 - Token store:
   - In-memory (по умолчанию)
   - Upstash Redis REST (если заданы `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`)
@@ -62,11 +61,10 @@
   - автосоздание сессии при отсутствии `cart_session_id`;
   - повторное использование существующей сессии;
   - валидация `quantity` (`>= 0`) и `items[]`;
-  - добавление через `/add` для single-item сценария;
+  - добавление single-item через merge + `/update` (без N+1 запросов);
   - обновление через `/update` для `items[]` c merge текущей корзины, включая удаление при `0`.
 - Integration-like:
   - проверка вызова `GET /front/cart` и парсинга `accessToken/tokenType`;
-  - проверка payload для `/front/cart/add`;
   - проверка payload для `/front/cart/update`.
 - Server wiring:
   - проверка делегирования `my_cart` и `add_to_my_cart` через MCP registry.
@@ -75,3 +73,4 @@
 - Добавить UI bootstrap endpoint для `ensure_cart_session` при первом открытии виджета.
 - Добавить optimistic update + финальную сверку snapshot в UI перед checkout.
 - Уточнить контракт полей cart API на реальных ответах prod/stage и расширить маппинг `items/total`.
+
