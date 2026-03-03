@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import logging
 from functools import lru_cache
@@ -19,6 +20,7 @@ from app.interfaces.mcp.tools.search_tools import search_products
 from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
+MIN_GZIP_BYTES = 512
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -659,13 +661,25 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
         request_id: str | None = None,
     ) -> None:
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        should_compress = self._should_use_gzip(len(encoded))
+        if should_compress:
+            encoded = gzip.compress(encoded, compresslevel=5)
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
+        if should_compress:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         if request_id:
             self.send_header("X-Request-Id", request_id)
         self.end_headers()
         self.wfile.write(encoded)
+
+    def _should_use_gzip(self, payload_size: int) -> bool:
+        if payload_size < MIN_GZIP_BYTES:
+            return False
+        accept_encoding = str(self.headers.get("Accept-Encoding") or "").lower()
+        return "gzip" in accept_encoding
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8000) -> None:
