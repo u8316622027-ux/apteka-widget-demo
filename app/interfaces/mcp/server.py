@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 import gzip
 import json
 import logging
@@ -24,10 +25,11 @@ from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 MIN_GZIP_BYTES = 512
 TOOL_RESPONSE_CACHE_TTL_SECONDS = 30.0
+TOOL_RESPONSE_CACHE_MAX_ENTRIES = 256
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 _TOOL_RESPONSE_CACHE_LOCK = threading.Lock()
-_TOOL_RESPONSE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_TOOL_RESPONSE_CACHE: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
 
 
 @dataclass(frozen=True, slots=True)
@@ -605,13 +607,18 @@ def _get_cached_tool_payload(cache_key: str) -> dict[str, Any] | None:
         if now >= expires_at:
             _TOOL_RESPONSE_CACHE.pop(cache_key, None)
             return None
+        _TOOL_RESPONSE_CACHE.move_to_end(cache_key)
         return payload
 
 
 def _set_cached_tool_payload(cache_key: str, payload: dict[str, Any]) -> None:
     expires_at = _monotonic() + TOOL_RESPONSE_CACHE_TTL_SECONDS
     with _TOOL_RESPONSE_CACHE_LOCK:
+        if cache_key in _TOOL_RESPONSE_CACHE:
+            _TOOL_RESPONSE_CACHE.move_to_end(cache_key)
         _TOOL_RESPONSE_CACHE[cache_key] = (expires_at, payload)
+        while len(_TOOL_RESPONSE_CACHE) > TOOL_RESPONSE_CACHE_MAX_ENTRIES:
+            _TOOL_RESPONSE_CACHE.popitem(last=False)
 
 
 def _build_tool_success_text(result_payload: dict[str, Any]) -> str:

@@ -215,6 +215,35 @@ class MCPServerTests(unittest.TestCase):
 
         self.assertEqual(mocked_search.call_count, 2)
 
+    def test_tools_call_search_products_cache_respects_max_entries_lru(self) -> None:
+        registry = create_tool_registry()
+        with patch("app.interfaces.mcp.server.TOOL_RESPONSE_CACHE_MAX_ENTRIES", 2):
+            with patch(
+                "app.interfaces.mcp.server.search_products",
+                side_effect=[
+                    {"query": "q1", "count": 1, "products": [{"id": 1}]},
+                    {"query": "q2", "count": 1, "products": [{"id": 2}]},
+                    {"query": "q3", "count": 1, "products": [{"id": 3}]},
+                    {"query": "q1", "count": 1, "products": [{"id": 1}]},
+                ],
+            ) as mocked_search:
+                with patch(
+                    "app.interfaces.mcp.server._monotonic",
+                    side_effect=[0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+                ):
+                    for request_id, query in [(51, "q1"), (52, "q2"), (53, "q3"), (54, "q1")]:
+                        handle_rpc_request(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "method": "tools/call",
+                                "params": {"name": "search_products", "arguments": {"query": query}},
+                            },
+                            registry=registry,
+                        )
+
+        self.assertEqual(mocked_search.call_count, 4)
+
     def test_tools_call_success_uses_compact_summary_text_content(self) -> None:
         registry = create_tool_registry()
         with patch(
