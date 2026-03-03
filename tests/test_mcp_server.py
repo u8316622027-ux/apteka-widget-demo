@@ -398,7 +398,16 @@ class MCPServerTests(unittest.TestCase):
         )
         self.assertIn("result", response)
         resources = response["result"]["resources"]
-        self.assertTrue(any(resource["uri"] == "ui://widget/products.html" for resource in resources))
+        products_resource = next(
+            resource for resource in resources if resource["uri"] == "ui://widget/products.html"
+        )
+        self.assertEqual(products_resource["mimeType"], "text/html+skybridge")
+        self.assertIn("_meta", products_resource)
+        self.assertEqual(
+            products_resource["_meta"]["openai/widgetDomain"],
+            "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+        )
+        self.assertIn("openai/widgetCSP", products_resource["_meta"])
 
     def test_resources_read_returns_products_template_content(self) -> None:
         response = handle_rpc_request(
@@ -414,6 +423,15 @@ class MCPServerTests(unittest.TestCase):
         self.assertEqual(contents[0]["uri"], "ui://widget/products.html")
         self.assertEqual(contents[0]["mimeType"], "text/html+skybridge")
         self.assertIn("search-toolbar", contents[0]["text"])
+        self.assertIn("_meta", contents[0])
+        self.assertEqual(
+            contents[0]["_meta"]["openai/widgetDomain"],
+            "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+        )
+        self.assertEqual(
+            contents[0]["_meta"]["openai/widgetCSP"]["resource_domains"],
+            ["https://api.apteka.md"],
+        )
 
     def test_tools_call_requires_string_name(self) -> None:
         registry = create_tool_registry()
