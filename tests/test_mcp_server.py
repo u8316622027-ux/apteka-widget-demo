@@ -12,11 +12,13 @@ from unittest.mock import patch
 
 from app.interfaces.mcp.server import (
     _is_json_content_type,
+    _reset_runtime_metrics_for_tests,
     _resolve_http_request_id,
     _reset_server_caches_for_tests,
     MCPHttpHandler,
     ThreadingHTTPServer,
     create_tool_registry,
+    get_runtime_metrics,
     handle_jsonrpc_payload,
     handle_rpc_request,
 )
@@ -25,6 +27,7 @@ from app.interfaces.mcp.server import (
 class MCPServerTests(unittest.TestCase):
     def tearDown(self) -> None:
         _reset_server_caches_for_tests()
+        _reset_runtime_metrics_for_tests()
 
     def test_resolve_http_request_id_prefers_incoming_header(self) -> None:
         self.assertEqual(_resolve_http_request_id("req-123"), "req-123")
@@ -465,6 +468,41 @@ class MCPServerTests(unittest.TestCase):
         self.assertEqual(kwargs["extra"]["http_request_id"], "http-req-1")
         self.assertEqual(kwargs["extra"]["tool_name"], "search_products")
 
+    def test_runtime_metrics_collect_tool_stats_and_cache_stats(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            return_value={"query": "q", "count": 1, "products": [{"id": 1}]},
+        ):
+            handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 91,
+                    "method": "tools/call",
+                    "params": {"name": "search_products", "arguments": {"query": "q"}},
+                },
+                registry=registry,
+            )
+            handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 92,
+                    "method": "tools/call",
+                    "params": {"name": "search_products", "arguments": {"query": "q"}},
+                },
+                registry=registry,
+            )
+
+        metrics = get_runtime_metrics()
+        self.assertGreaterEqual(int(metrics["rpc_requests_total"]), 2)
+        self.assertGreaterEqual(int(metrics["tool_calls_total"]), 2)
+        self.assertGreaterEqual(int(metrics["cache_hits_total"]), 1)
+        self.assertGreaterEqual(int(metrics["cache_misses_total"]), 1)
+        by_tool = metrics["tools"]
+        self.assertIn("search_products", by_tool)
+        self.assertGreaterEqual(int(by_tool["search_products"]["calls"]), 2)
+        self.assertGreaterEqual(float(by_tool["search_products"]["avg_latency_ms"]), 0.0)
+
     def test_track_order_status_tool_description_mentions_supported_inputs(self) -> None:
         registry = create_tool_registry()
 
@@ -820,6 +858,21 @@ class MCPHttpTransportRequestIdTests(unittest.TestCase):
         decoded = raw_body.decode("utf-8")
         payload = json.loads(decoded)
         self.assertEqual(payload["id"], 4)
+
+    def test_http_metrics_endpoint_returns_runtime_snapshot(self) -> None:
+        connection = http.client.HTTPConnection(self._host, self._port, timeout=5)
+        connection.request("GET", "/metrics", headers={})
+        response = connection.getresponse()
+        raw_body = response.read()
+        headers_map = {key.lower(): value for key, value in response.getheaders()}
+        status_code = response.status
+        connection.close()
+
+        self.assertEqual(status_code, 200)
+        self.assertIn("x-request-id", headers_map)
+        payload = json.loads(raw_body.decode("utf-8"))
+        self.assertIn("rpc_requests_total", payload)
+        self.assertIn("tools", payload)
 
 
 if __name__ == "__main__":

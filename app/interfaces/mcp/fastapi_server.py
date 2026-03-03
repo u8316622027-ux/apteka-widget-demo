@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import gzip
 import importlib
 import json
@@ -14,6 +15,7 @@ from app.interfaces.mcp.server import (
     _is_json_content_type,
     _resolve_http_request_id,
     _rpc_error,
+    get_runtime_metrics,
     handle_jsonrpc_payload,
 )
 
@@ -37,6 +39,20 @@ def _build_json_response_bytes(
     return compressed, {"Content-Encoding": "gzip", "Vary": "Accept-Encoding"}
 
 
+async def _dispatch_jsonrpc_in_thread(
+    request_payload: Any,
+    *,
+    registry: dict[str, Any] | None,
+    request_id: str,
+) -> dict[str, Any] | list[dict[str, Any]] | None:
+    return await asyncio.to_thread(
+        handle_jsonrpc_payload,
+        request_payload,
+        registry=registry,
+        http_request_id=request_id,
+    )
+
+
 def create_fastapi_app(*, registry: dict[str, Any] | None = None) -> Any:
     try:
         fastapi = importlib.import_module("fastapi")
@@ -54,6 +70,11 @@ def create_fastapi_app(*, registry: dict[str, Any] | None = None) -> Any:
     async def health(request: Any) -> Any:
         request_id = _resolve_http_request_id(request.headers.get("x-request-id"))
         return JSONResponse({"status": "ok"}, headers={"X-Request-Id": request_id})
+
+    @app.get("/metrics")
+    async def metrics(request: Any) -> Any:
+        request_id = _resolve_http_request_id(request.headers.get("x-request-id"))
+        return JSONResponse(get_runtime_metrics(), headers={"X-Request-Id": request_id})
 
     @app.post("/mcp")
     async def mcp_rpc(request: Any) -> Any:
@@ -83,10 +104,10 @@ def create_fastapi_app(*, registry: dict[str, Any] | None = None) -> Any:
                 headers={"X-Request-Id": request_id},
             )
 
-        response_payload = handle_jsonrpc_payload(
+        response_payload = await _dispatch_jsonrpc_in_thread(
             request_payload,
             registry=registry,
-            http_request_id=request_id,
+            request_id=request_id,
         )
         if response_payload is None:
             return Response(status_code=204, headers={"X-Request-Id": request_id})
