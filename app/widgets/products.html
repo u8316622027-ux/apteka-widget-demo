@@ -1,13 +1,29 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MCP Widget</title>
+    <title>Products Mock Widget</title>
+    <link rel="stylesheet" href="./styles/widget-shell.css" />
   </head>
   <body>
-    <main id="app-root">
-      <!-- widget shell placeholders -->
+    <main class="widget-shell" data-widget-shell="search_products">
+      <header class="widget-header">
+        <span class="widget-label">search_products</span>
+        <h1 class="widget-title">Product Search Layout</h1>
+        <p class="widget-subtitle">Static mockup. Controls are intentionally disabled for this stage.</p>
+      </header>
+      <section class="widget-grid">
+        <article class="widget-card">
+          <h2>Search Bar Placeholder</h2>
+          <p>Free-text query input area mock.</p>
+        </article>
+        <article class="widget-card">
+          <h2>Results List Placeholder</h2>
+          <p>Product cards will be connected in the next step.</p>
+        </article>
+      </section>
     </main>
+    <script src="./scripts/widget-shell.js"></script>
   </body>
 </html>

@@ -129,6 +129,26 @@ class MCPServerTests(unittest.TestCase):
             },
         )
 
+    def test_tools_list_includes_ui_metadata_for_search_products(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {"jsonrpc": "2.0", "id": 20, "method": "tools/list", "params": {}},
+            registry=registry,
+        )
+
+        tool_payload = next(
+            tool for tool in response["result"]["tools"] if tool["name"] == "search_products"
+        )
+
+        self.assertEqual(tool_payload["outputTemplate"], "ui://widget/products.html")
+        self.assertIn("ui", tool_payload)
+        self.assertEqual(
+            tool_payload["ui"]["domain"],
+            "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+        )
+        self.assertEqual(tool_payload["ui"]["csp"]["resourceDomains"], ["https://api.apteka.md"])
+
     def test_default_registry_is_cached_between_requests(self) -> None:
         _reset_server_caches_for_tests()
         with patch(
@@ -163,6 +183,36 @@ class MCPServerTests(unittest.TestCase):
         mocked_search.assert_called_once_with("цитрамон", limit=5)
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+        self.assertFalse(response["result"]["structuredContent"]["no_results"])
+        self.assertEqual(
+            response["result"]["structuredContent"]["widget"]["open"]["template"],
+            "ui://widget/products.html",
+        )
+        self.assertTrue(response["result"]["structuredContent"]["widget"]["open"]["replace_previous"])
+
+    def test_tools_call_search_products_marks_no_results_and_widget_metadata(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            return_value={"query": "none", "count": 0, "products": []},
+        ):
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 301,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_products",
+                        "arguments": {"query": "none", "limit": 5},
+                    },
+                },
+                registry=registry,
+            )
+
+        structured = response["result"]["structuredContent"]
+        self.assertTrue(structured["no_results"])
+        self.assertEqual(structured["products"], [])
+        self.assertEqual(structured["widget"]["open"]["template"], "ui://widget/products.html")
 
     def test_tools_call_search_products_uses_ttl_cache(self) -> None:
         registry = create_tool_registry()

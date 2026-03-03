@@ -43,6 +43,12 @@ _RUNTIME_METRICS: dict[str, Any] = {
     "cache_misses_total": 0,
     "tools": {},
 }
+WIDGET_UI_CONFIG: dict[str, Any] = {
+    "domain": "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+    "csp": {
+        "resourceDomains": ["https://api.apteka.md"],
+    },
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +59,8 @@ class ToolDefinition:
     description: str
     input_schema: dict[str, Any]
     handler: Callable[[dict[str, Any]], dict[str, Any]]
+    output_template: str
+    ui: dict[str, Any]
 
 
 def _not_implemented_tool(tool_name: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -146,7 +154,11 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
     return {
         "search_products": ToolDefinition(
             name="search_products",
-            description="Search products by query in apteka catalog.",
+            description=(
+                "Search products by free-text query via Stage API. "
+                "Args: query and optional limit. "
+                "Returns structuredContent.products and structuredContent.no_results when empty."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
@@ -156,6 +168,8 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "required": ["query"],
             },
             handler=_search_products_handler,
+            output_template="ui://widget/products.html",
+            ui=WIDGET_UI_CONFIG,
         ),
         "add_to_my_cart": ToolDefinition(
             name="add_to_my_cart",
@@ -192,6 +206,8 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "anyOf": [{"required": ["product_id"]}, {"required": ["items"]}],
             },
             handler=_add_to_my_cart_handler,
+            output_template="ui://widget/add-to-my-cart.html",
+            ui=WIDGET_UI_CONFIG,
         ),
         "checkout_order": ToolDefinition(
             name="checkout_order",
@@ -254,6 +270,8 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 },
             },
             handler=_checkout_order_handler,
+            output_template="ui://widget/checkout.html",
+            ui=WIDGET_UI_CONFIG,
         ),
         "support_knowledge_search": ToolDefinition(
             name="support_knowledge_search",
@@ -270,6 +288,8 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "required": ["query"],
             },
             handler=_support_knowledge_search_handler,
+            output_template="ui://widget/faq.html",
+            ui=WIDGET_UI_CONFIG,
         ),
         "my_cart": ToolDefinition(
             name="my_cart",
@@ -279,12 +299,16 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "properties": {"cart_session_id": {"type": "string"}},
             },
             handler=_my_cart_handler,
+            output_template="ui://widget/my-cart.html",
+            ui=WIDGET_UI_CONFIG,
         ),
         "set_widget_theme": ToolDefinition(
             name="set_widget_theme",
             description="Set storefront widget theme.",
             input_schema={"type": "object"},
             handler=_not_implemented_tool("set_widget_theme"),
+            output_template="ui://widget/theme.html",
+            ui=WIDGET_UI_CONFIG,
         ),
         "track_order_status_ui": ToolDefinition(
             name="track_order_status_ui",
@@ -305,6 +329,8 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "required": ["lookup"],
             },
             handler=_track_order_status_ui_handler,
+            output_template="ui://widget/tracking.html",
+            ui=WIDGET_UI_CONFIG,
         ),
     }
 
@@ -318,15 +344,42 @@ def _get_default_tool_registry() -> dict[str, ToolDefinition]:
 def _get_default_tools_list_payload() -> dict[str, Any]:
     registry = _get_default_tool_registry()
     return {
-        "tools": [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.input_schema,
-            }
-            for tool in registry.values()
-        ]
+        "tools": [_serialize_tool_definition(tool) for tool in registry.values()]
     }
+
+
+def _serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
+    return {
+        "name": tool.name,
+        "description": tool.description,
+        "inputSchema": tool.input_schema,
+        "outputTemplate": tool.output_template,
+        "ui": tool.ui,
+    }
+
+
+def _decorate_tool_result(
+    tool_name: str, tool: ToolDefinition, result_payload: dict[str, Any]
+) -> dict[str, Any]:
+    payload = dict(result_payload)
+
+    if tool_name == "search_products":
+        products = payload.get("products")
+        if isinstance(products, list):
+            normalized_products = products
+        else:
+            normalized_products = []
+        payload["products"] = normalized_products
+        payload["no_results"] = len(normalized_products) == 0
+
+    payload["widget"] = {
+        "open": {
+            "template": tool.output_template,
+            "replace_previous": True,
+        },
+        "ui": tool.ui,
+    }
+    return payload
 
 
 def _reset_server_caches_for_tests() -> None:
@@ -436,16 +489,7 @@ def handle_rpc_request(
         if registry is None:
             tools_result = _get_default_tools_list_payload()
         else:
-            tools_result = {
-                "tools": [
-                    {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "inputSchema": tool.input_schema,
-                    }
-                    for tool in active_registry.values()
-                ]
-            }
+            tools_result = {"tools": [_serialize_tool_definition(tool) for tool in active_registry.values()]}
         return {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -475,6 +519,7 @@ def handle_rpc_request(
         if cache_ttl_seconds is not None and cache_key is not None:
             cached_payload = _get_cached_tool_payload(cache_key)
             if cached_payload is not None:
+                structured_payload = _decorate_tool_result(tool_name, tool, cached_payload)
                 _record_tool_result(
                     tool_name,
                     latency_ms=(_perf_counter() - started_at) * 1000.0,
@@ -485,18 +530,19 @@ def handle_rpc_request(
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "result": {
-                        "content": [{"type": "text", "text": _build_tool_success_text(cached_payload)}],
-                        "structuredContent": cached_payload,
+                        "content": [{"type": "text", "text": _build_tool_success_text(structured_payload)}],
+                        "structuredContent": structured_payload,
                         "isError": False,
                     },
                 }
 
         try:
             result_payload = tool.handler(arguments)
+            structured_payload = _decorate_tool_result(tool_name, tool, result_payload)
             if cache_ttl_seconds is not None and cache_key is not None:
                 _set_cached_tool_payload(
                     cache_key,
-                    result_payload,
+                    structured_payload,
                     ttl_seconds=cache_ttl_seconds,
                 )
             _record_tool_result(
@@ -509,8 +555,8 @@ def handle_rpc_request(
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
-                    "content": [{"type": "text", "text": _build_tool_success_text(result_payload)}],
-                    "structuredContent": result_payload,
+                    "content": [{"type": "text", "text": _build_tool_success_text(structured_payload)}],
+                    "structuredContent": structured_payload,
                     "isError": False,
                 },
             }

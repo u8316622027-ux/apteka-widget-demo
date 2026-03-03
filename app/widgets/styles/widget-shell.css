@@ -1,0 +1,120 @@
+:root {
+  color-scheme: light dark;
+  --widget-text: #0f172a;
+  --widget-border: rgba(15, 23, 42, 0.14);
+  --widget-surface: rgba(255, 255, 255, 0.82);
+  --widget-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+  --widget-muted: #475569;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --widget-text: #f8fafc;
+    --widget-border: rgba(148, 163, 184, 0.24);
+    --widget-surface: rgba(15, 23, 42, 0.56);
+    --widget-shadow: 0 12px 28px rgba(2, 6, 23, 0.4);
+    --widget-muted: #cbd5e1;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  background: transparent;
+}
+
+body {
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  color: var(--widget-text);
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+}
+
+.widget-shell {
+  width: min(100%, 980px);
+  border-radius: 16px;
+  border: 1px solid var(--widget-border);
+  box-shadow: var(--widget-shadow);
+  background: linear-gradient(140deg, var(--widget-surface), rgba(148, 163, 184, 0.12));
+  backdrop-filter: blur(6px);
+  padding: 16px;
+}
+
+.widget-header {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.widget-label {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid var(--widget-border);
+}
+
+.widget-title {
+  margin: 0;
+  font-size: clamp(18px, 3.5vw, 24px);
+  line-height: 1.2;
+}
+
+.widget-subtitle {
+  margin: 0;
+  color: var(--widget-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.widget-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.widget-card {
+  border: 1px solid var(--widget-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.36);
+  padding: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .widget-card {
+    background: rgba(15, 23, 42, 0.36);
+  }
+}
+
+.widget-card h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.widget-card p {
+  margin: 0;
+  color: var(--widget-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+@media (max-width: 640px) {
+  body {
+    padding: 8px;
+  }
+
+  .widget-shell {
+    border-radius: 14px;
+    padding: 12px;
+  }
+}
