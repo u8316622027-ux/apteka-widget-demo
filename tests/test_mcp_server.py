@@ -5,10 +5,64 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from app.interfaces.mcp.server import create_tool_registry, handle_rpc_request
+from app.interfaces.mcp.server import (
+    _is_json_content_type,
+    create_tool_registry,
+    handle_jsonrpc_payload,
+    handle_rpc_request,
+)
 
 
 class MCPServerTests(unittest.TestCase):
+    def test_json_content_type_allows_application_json_with_charset(self) -> None:
+        self.assertTrue(_is_json_content_type("application/json"))
+        self.assertTrue(_is_json_content_type("application/json; charset=utf-8"))
+        self.assertFalse(_is_json_content_type("text/plain"))
+
+    def test_handle_jsonrpc_payload_supports_batch_requests(self) -> None:
+        registry = create_tool_registry()
+        response = handle_jsonrpc_payload(
+            [
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            ],
+            registry=registry,
+        )
+
+        self.assertIsInstance(response, list)
+        assert isinstance(response, list)
+        self.assertEqual(len(response), 2)
+        self.assertEqual(response[0]["id"], 1)
+        self.assertEqual(response[1]["id"], 2)
+
+    def test_handle_jsonrpc_payload_returns_invalid_request_for_empty_batch(self) -> None:
+        response = handle_jsonrpc_payload([])
+
+        self.assertIsInstance(response, dict)
+        assert isinstance(response, dict)
+        self.assertEqual(response["error"]["code"], -32600)
+
+    def test_handle_jsonrpc_payload_notification_returns_none(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.search_products",
+            return_value={"query": "цитрамон", "count": 1, "products": [{"id": 1}]},
+        ) as mocked_search:
+            response = handle_jsonrpc_payload(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "search_products",
+                        "arguments": {"query": "цитрамон", "limit": 5},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_search.assert_called_once_with("цитрамон", limit=5)
+        self.assertIsNone(response)
+
     def test_invalid_request_payload_type_returns_invalid_request_error(self) -> None:
         response = handle_rpc_request("not-a-dict")  # type: ignore[arg-type]
 
