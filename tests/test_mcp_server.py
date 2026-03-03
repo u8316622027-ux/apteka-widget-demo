@@ -874,6 +874,25 @@ class MCPHttpTransportRequestIdTests(unittest.TestCase):
         self.assertIn("rpc_requests_total", payload)
         self.assertIn("tools", payload)
 
+    def test_http_request_writes_access_log_with_request_details(self) -> None:
+        with patch("app.interfaces.mcp.server.logger") as mocked_logger:
+            status, headers, _ = self._post_mcp(
+                {"jsonrpc": "2.0", "id": 7, "method": "initialize", "params": {}},
+                headers={"X-Request-Id": "req-access-1", "User-Agent": "test-agent"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("x-request-id"), "req-access-1")
+        mocked_logger.info.assert_called()
+        _, kwargs = mocked_logger.info.call_args
+        self.assertIn("extra", kwargs)
+        self.assertEqual(kwargs["extra"]["method"], "POST")
+        self.assertEqual(kwargs["extra"]["path"], "/mcp")
+        self.assertEqual(kwargs["extra"]["status_code"], 200)
+        self.assertEqual(kwargs["extra"]["request_id"], "req-access-1")
+        self.assertEqual(kwargs["extra"]["user_agent"], "test-agent")
+        self.assertEqual(kwargs["extra"]["client_ip"], "127.0.0.1")
+
 
 if __name__ == "__main__":
     unittest.main()
