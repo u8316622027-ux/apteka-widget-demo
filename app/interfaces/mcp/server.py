@@ -8,6 +8,7 @@ import gzip
 import json
 import logging
 import os
+from pathlib import Path
 import threading
 from functools import lru_cache
 from dataclasses import dataclass
@@ -355,6 +356,12 @@ def _serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
         "inputSchema": tool.input_schema,
         "outputTemplate": tool.output_template,
         "ui": tool.ui,
+        "_meta": {
+            "openai/outputTemplate": tool.output_template,
+            "openai/widgetAccessible": True,
+            "openai/widgetDomain": str(tool.ui.get("domain") or ""),
+            "openai/widgetCSP": tool.ui.get("csp") or {},
+        },
     }
 
 
@@ -385,6 +392,7 @@ def _decorate_tool_result(
 def _reset_server_caches_for_tests() -> None:
     _get_default_tool_registry.cache_clear()
     _get_default_tools_list_payload.cache_clear()
+    _widget_resource_index.cache_clear()
     _get_tool_cache_config.cache_clear()
     with _TOOL_RESPONSE_CACHE_LOCK:
         _TOOL_RESPONSE_CACHE.clear()
@@ -480,8 +488,55 @@ def handle_rpc_request(
             "id": request_id,
             "result": {
                 "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
+                "capabilities": {"tools": {}, "resources": {}},
                 "serverInfo": {"name": "apteka-mcp", "version": "0.1.0"},
+            },
+        }
+
+    if method == "resources/list":
+        resources = []
+        for uri, relative_path in _widget_resource_index().items():
+            resources.append(
+                {
+                    "uri": uri,
+                    "name": relative_path,
+                    "mimeType": "text/html+skybridge",
+                }
+            )
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"resources": resources},
+        }
+
+    if method == "resources/read":
+        uri = params.get("uri")
+        if not isinstance(uri, str) or not uri.strip():
+            return _rpc_error(request_id, -32602, "Invalid params: uri must be a non-empty string")
+
+        resource_index = _widget_resource_index()
+        normalized_uri = uri.strip()
+        relative_path = resource_index.get(normalized_uri)
+        if relative_path is None:
+            return _rpc_error(request_id, -32602, f"Resource not found: {normalized_uri}")
+
+        file_path = Path(__file__).resolve().parents[2] / "widgets" / relative_path
+        try:
+            html_text = file_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return _rpc_error(request_id, -32602, f"Resource not found: {normalized_uri}")
+
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "contents": [
+                    {
+                        "uri": normalized_uri,
+                        "mimeType": "text/html+skybridge",
+                        "text": html_text,
+                    }
+                ]
             },
         }
 
@@ -637,6 +692,21 @@ def _rpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
         "id": request_id,
         "error": {"code": code, "message": message},
     }
+
+
+@lru_cache(maxsize=1)
+def _widget_resource_index() -> dict[str, str]:
+    registry = _get_default_tool_registry()
+    mapping: dict[str, str] = {}
+    for tool in registry.values():
+        uri = tool.output_template.strip()
+        if not uri.startswith("ui://widget/"):
+            continue
+        relative_path = uri.removeprefix("ui://widget/").strip()
+        if not relative_path:
+            continue
+        mapping[uri] = relative_path
+    return mapping
 
 
 def _validate_input_schema(arguments: dict[str, Any], schema: dict[str, Any]) -> str | None:
