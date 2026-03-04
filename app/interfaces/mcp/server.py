@@ -47,8 +47,10 @@ _RUNTIME_METRICS: dict[str, Any] = {
 WIDGET_UI_CONFIG: dict[str, Any] = {
     "domain": "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
     "csp": {
+        "connectDomains": ["https://stage.apteka.md"],
         "resourceDomains": [
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+            "https://stage.apteka.md",
             "https://www.apteka.md",
             "https://cdn.jsdelivr.net",
             "https://api.apteka.md",
@@ -505,6 +507,7 @@ def handle_rpc_request(
             description = str(resource_data["description"])
             ui_domain = str(resource_data["domain"])
             resource_domains = list(resource_data["resource_domains"])
+            connect_domains = list(resource_data["connect_domains"])
             resources.append(
                 {
                     "uri": uri,
@@ -515,7 +518,7 @@ def handle_rpc_request(
                         "openai/widgetDescription": description,
                         "openai/widgetDomain": ui_domain,
                         "openai/widgetCSP": {
-                            "connect_domains": [],
+                            "connect_domains": connect_domains,
                             "resource_domains": resource_domains,
                         },
                     },
@@ -558,7 +561,7 @@ def handle_rpc_request(
                             "openai/widgetDescription": str(resource_data["description"]),
                             "openai/widgetDomain": str(resource_data["domain"]),
                             "openai/widgetCSP": {
-                                "connect_domains": [],
+                                "connect_domains": list(resource_data["connect_domains"]),
                                 "resource_domains": list(resource_data["resource_domains"]),
                             },
                         },
@@ -737,12 +740,17 @@ def _widget_resource_index() -> dict[str, dict[str, Any]]:
         resource_domains = csp.get("resourceDomains")
         if not isinstance(resource_domains, list):
             resource_domains = []
+        connect_domains = csp.get("connectDomains")
+        if not isinstance(connect_domains, list):
+            connect_domains = []
         normalized_resource_domains = [str(domain).strip() for domain in resource_domains if str(domain).strip()]
+        normalized_connect_domains = [str(domain).strip() for domain in connect_domains if str(domain).strip()]
         mapping[uri] = {
             "path": relative_path,
             "description": tool.description,
             "domain": ui_domain,
             "resource_domains": normalized_resource_domains,
+            "connect_domains": normalized_connect_domains,
         }
     return mapping
 
