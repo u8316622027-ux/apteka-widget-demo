@@ -29,6 +29,13 @@ npx playwright test
 - Какие команды проверок запущены.
 - Результат: `biome` / `ruff` / `pytest` / `playwright` (`pass`/`fail` и причина при `fail`).
 
+### Frontend guardrails (кратко)
+- Не держать большие inline `<style>/<script>` в HTML; выносить в `app/widgets/styles/*`.
+- Для bugfix UI обязателен TDD; для новых экранов тесты обязательны до merge.
+- Проверять адаптив на `320px`, `768px`, `1280px`.
+- Обеспечивать `Accessibility minimum`: `aria-label`, `:focus`, контраст, семантика, клавиатурная навигация.
+- Новые frontend-зависимости фиксировать решением в `docs/frontend/decisions/`.
+
 ## Git workflow (always)
 
 ### Ветки

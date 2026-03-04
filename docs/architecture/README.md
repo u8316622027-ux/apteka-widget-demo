@@ -27,6 +27,11 @@
 - Стили: `Tailwind CSS` (locally built) + локальные widget-стили.
 - Tailwind собирается локально из `app/widgets/styles/tailwind.input.css` в `app/widgets/styles/tailwind.css`.
 
+## Документация по слоям
+- Frontend стандарты: `docs/frontend/standards.md`
+- Frontend решения по зависимостям: `docs/frontend/decisions/README.md`
+- Backend контракты и правила: `docs/backend/README.md`
+
 ## MCP Transport Endpoints
 - Основной RPC endpoint: `POST /mcp`
 - Healthcheck: `GET /health`
