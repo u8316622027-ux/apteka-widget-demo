@@ -67,8 +67,8 @@ class WidgetTemplateTests(unittest.TestCase):
 
     def test_products_template_has_bottom_controls(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
-        self.assertIn('class="carousel-bottom"', template_text)
-        self.assertIn('class="section-divider"', template_text)
+        self.assertNotIn('class="carousel-bottom"', template_text)
+        self.assertNotIn('class="section-divider"', template_text)
 
     def test_products_template_limits_widget_height(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
@@ -87,18 +87,19 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_uses_clickable_official_logo(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn('href="https://www.apteka.md/"', template_text)
-        self.assertIn(
-            'src="https://www.apteka.md/_next/static/media/BigLogo.50692667.svg"',
-            template_text,
-        )
+        self.assertIn('class="search-logo-svg"', template_text)
+        self.assertIn("apteka.md", template_text)
 
     def test_products_template_removes_top_labels_and_shell_card(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         compact = template_text.replace(" ", "")
         self.assertNotIn("Вызываемый инструмент", template_text)
         self.assertNotIn('class="brand-row"', template_text)
+        self.assertIn("body{", compact)
+        self.assertIn("background:transparent", compact)
         self.assertIn("background:transparent", compact)
         self.assertIn("border:none", compact)
+        self.assertIn("overflow-y:hidden", compact)
 
 
 if __name__ == "__main__":
