@@ -406,7 +406,7 @@ class MCPServerTests(unittest.TestCase):
         products_resource = next(
             resource for resource in resources if resource["uri"] == "ui://widget/products.html"
         )
-        self.assertEqual(products_resource["mimeType"], "text/html+skybridge")
+        self.assertEqual(products_resource["mimeType"], "text/html;profile=mcp-app")
         self.assertIn("_meta", products_resource)
         self.assertEqual(
             products_resource["_meta"]["openai/widgetDomain"],
@@ -426,7 +426,7 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("result", response)
         contents = response["result"]["contents"]
         self.assertEqual(contents[0]["uri"], "ui://widget/products.html")
-        self.assertEqual(contents[0]["mimeType"], "text/html+skybridge")
+        self.assertEqual(contents[0]["mimeType"], "text/html;profile=mcp-app")
         self.assertIn("search-toolbar", contents[0]["text"])
         self.assertIn("_meta", contents[0])
         self.assertEqual(

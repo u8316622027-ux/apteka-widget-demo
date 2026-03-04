@@ -35,7 +35,10 @@ class WidgetTemplateTests(unittest.TestCase):
         )
         for template_name in template_names:
             template_text = (widget_dir / template_name).read_text(encoding="utf-8")
-            self.assertIn("tailwind.css", template_text)
+            if template_name == "products.html":
+                self.assertNotIn("tailwind.css", template_text)
+            else:
+                self.assertIn("tailwind.css", template_text)
             self.assertIn("data-widget-shell=", template_text)
             self.assertIn("x-data=", template_text)
             self.assertIn("alpinejs", template_text)
@@ -55,9 +58,7 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertNotIn('data-inline-widget-style="products"', template_text)
 
     def test_products_template_has_desktop_carousel_and_tablet_layout(self) -> None:
-        template_text = Path("app/widgets/styles/widget-products.css").read_text(
-            encoding="utf-8"
-        )
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         compact = template_text.replace(" ", "")
         self.assertIn("grid-template-columns:repeat(3,minmax(0,1fr))", compact)
         self.assertIn("width:calc(100%+190px)", compact)
@@ -70,20 +71,18 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn('class="section-divider"', template_text)
 
     def test_products_template_limits_widget_height(self) -> None:
-        template_text = Path("app/widgets/styles/widget-products.css").read_text(
-            encoding="utf-8"
-        )
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         compact = template_text.replace(" ", "")
         self.assertIn("align-items:flex-start", compact)
         self.assertIn("max-height:calc(100vh-32px)", compact)
         self.assertIn("overflow-y:auto", compact)
 
-    def test_products_template_uses_external_assets_and_avoids_inline_blocks(self) -> None:
+    def test_products_template_uses_inline_bundle_for_apps_sdk(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
-        self.assertIn('href="./styles/widget-products.css"', template_text)
-        self.assertIn('src="./scripts/widget-shell.js"', template_text)
-        self.assertNotIn("<style>", template_text)
-        self.assertNotIn("<script>\n", template_text)
+        self.assertNotIn('href="./styles/widget-products.css"', template_text)
+        self.assertNotIn('src="./scripts/widget-shell.js"', template_text)
+        self.assertIn("<style>", template_text)
+        self.assertIn("<script>", template_text)
 
 
 if __name__ == "__main__":
