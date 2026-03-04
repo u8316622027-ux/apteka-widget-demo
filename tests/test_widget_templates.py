@@ -74,8 +74,8 @@ class WidgetTemplateTests(unittest.TestCase):
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         compact = template_text.replace(" ", "")
         self.assertIn("align-items:flex-start", compact)
-        self.assertIn("max-height:calc(100vh-32px)", compact)
-        self.assertIn("overflow-y:auto", compact)
+        self.assertNotIn("overflow-y:auto", compact)
+        self.assertNotIn("max-height:calc(100vh-32px)", compact)
 
     def test_products_template_uses_inline_bundle_for_apps_sdk(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
@@ -83,6 +83,22 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertNotIn('src="./scripts/widget-shell.js"', template_text)
         self.assertIn("<style>", template_text)
         self.assertIn("<script>", template_text)
+
+    def test_products_template_uses_clickable_official_logo(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertIn('href="https://www.apteka.md/"', template_text)
+        self.assertIn(
+            'src="https://www.apteka.md/_next/static/media/BigLogo.50692667.svg"',
+            template_text,
+        )
+
+    def test_products_template_removes_top_labels_and_shell_card(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        compact = template_text.replace(" ", "")
+        self.assertNotIn("Вызываемый инструмент", template_text)
+        self.assertNotIn('class="brand-row"', template_text)
+        self.assertIn("background:transparent", compact)
+        self.assertIn("border:none", compact)
 
 
 if __name__ == "__main__":

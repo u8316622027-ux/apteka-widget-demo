@@ -26,72 +26,31 @@
 
       .widget-shell.search-mock {
         width: min(100%, 920px);
-        max-height: calc(100vh - 32px);
-        border-radius: 16px;
-        background: #1a1d23;
-        border: 1px solid rgba(32, 64, 128, 0.5);
-        padding: 16px 16px 22px;
-        overflow-x: hidden;
-        overflow-y: auto;
-      }
-
-      .search-caption {
-        font-size: 15px;
-        font-weight: 600;
-        margin-bottom: 16px;
-        color: #e4e9f7;
-      }
-
-      .brand-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 12px;
-      }
-
-      .brand-pill {
-        width: 24px;
-        height: 24px;
-        border-radius: 999px;
-        background: #2468ac;
-        color: #fff;
-        font-weight: 700;
-        display: grid;
-        place-items: center;
-        font-size: 13px;
-      }
-
-      .brand-name {
-        color: #d2dbef;
-        font-size: 34px;
-        line-height: 1;
+        border-radius: 0;
+        background: transparent;
+        border: none;
+        padding: 0;
+        overflow: visible;
       }
 
       .search-toolbar {
         display: grid;
-        grid-template-columns: 140px 1fr 58px;
+        grid-template-columns: 184px 1fr 58px;
         gap: 12px;
         align-items: center;
         margin-bottom: 14px;
       }
 
-      .search-logo {
+      .search-logo-link {
         display: flex;
         align-items: center;
-        gap: 8px;
-        color: #1a63d5;
+        line-height: 0;
       }
 
-      .logo-mark {
-        color: #ef1148;
-        font-size: 46px;
-        line-height: 0.75;
-      }
-
-      .logo-text {
-        font-size: 43px;
-        font-weight: 600;
-        line-height: 1;
+      .search-logo-link img {
+        width: 100%;
+        height: auto;
+        max-height: 56px;
       }
 
       .search-input-wrap {
@@ -264,20 +223,8 @@
       }
 
       @media (max-width: 930px) {
-        .brand-name {
-          font-size: 28px;
-        }
-
-        .logo-text {
-          font-size: 34px;
-        }
-
-        .logo-mark {
-          font-size: 38px;
-        }
-
         .search-toolbar {
-          grid-template-columns: 120px 1fr 48px;
+          grid-template-columns: 144px 1fr 48px;
         }
 
         .product-carousel {
@@ -303,16 +250,12 @@
           padding: 8px;
         }
 
-        .widget-shell.search-mock {
-          max-height: calc(100vh - 16px);
-        }
-
         .search-toolbar {
           grid-template-columns: 1fr;
         }
 
-        .search-logo {
-          justify-content: space-between;
+        .search-logo-link {
+          max-width: 180px;
         }
 
         .cart-icon {
@@ -345,17 +288,10 @@
   </head>
   <body x-data="{ tool: 'search_products' }">
     <main class="widget-shell search-mock" data-widget-shell="search_products">
-      <div class="search-caption">Вызываемый инструмент</div>
-      <div class="brand-row">
-        <div class="brand-pill">A</div>
-        <div class="brand-name">Apteka.md</div>
-      </div>
-
       <section class="search-toolbar">
-        <div class="search-logo">
-          <span class="logo-mark">❤✚</span>
-          <span class="logo-text">apteka.md</span>
-        </div>
+        <a class="search-logo-link" href="https://www.apteka.md/" target="_blank" rel="noopener noreferrer">
+          <img src="https://www.apteka.md/_next/static/media/BigLogo.50692667.svg" alt="Apteka" />
+        </a>
         <label class="search-input-wrap">
           <input type="text" placeholder="Искать по всем категориям" disabled />
           <span class="search-icon">⌕</span>
