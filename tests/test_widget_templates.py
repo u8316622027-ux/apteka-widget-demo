@@ -50,10 +50,9 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn('class="carousel-arrow left"', template_text)
         self.assertIn('class="carousel-arrow right"', template_text)
 
-    def test_products_template_has_inline_style_fallback(self) -> None:
+    def test_products_template_does_not_have_inline_style_fallback(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
-        self.assertIn('data-inline-widget-style="products"', template_text)
-        self.assertIn(".search-mock", template_text)
+        self.assertNotIn('data-inline-widget-style="products"', template_text)
 
     def test_products_template_has_desktop_carousel_and_tablet_layout(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
