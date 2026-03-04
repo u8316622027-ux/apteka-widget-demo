@@ -49,6 +49,7 @@ WIDGET_UI_CONFIG: dict[str, Any] = {
     "csp": {
         "resourceDomains": [
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+            "https://www.apteka.md",
             "https://cdn.jsdelivr.net",
             "https://api.apteka.md",
         ],

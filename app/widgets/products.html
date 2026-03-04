@@ -48,9 +48,10 @@
         line-height: 0;
       }
 
-      .search-logo-svg {
+      .search-logo-image {
         width: 170px;
         height: 44px;
+        object-fit: contain;
       }
 
       .search-input-wrap {
@@ -227,7 +228,7 @@
           grid-template-columns: 1fr;
         }
 
-        .search-logo-svg {
+        .search-logo-image {
           width: 180px;
         }
 
@@ -263,25 +264,11 @@
     <main class="widget-shell search-mock" data-widget-shell="search_products">
       <section class="search-toolbar">
         <a class="search-logo-link" href="https://www.apteka.md/" target="_blank" rel="noopener noreferrer">
-          <svg
-            class="search-logo-svg"
-            viewBox="0 0 223 57"
-            xmlns="http://www.w3.org/2000/svg"
-            role="img"
-            aria-label="apteka.md"
-          >
-            <g fill="none" fill-rule="evenodd">
-              <path
-                d="M26.7 7.3c5.5 0 9.8 4.3 9.8 9.7 0 2.6-1 5-2.8 6.8l-5.8 5.8-5.8-5.8a9.6 9.6 0 0 1-2.9-6.8c0-5.4 4.4-9.7 9.8-9.7Zm-14.5 9.6c0 4 1.5 7.8 4.3 10.7L27.9 39l11.4-11.4a15 15 0 0 0 0-21.4 15.2 15.2 0 0 0-21.4 0 15 15 0 0 0-4.4 10.7Z"
-                fill="#f01657"
-              />
-              <path d="M24.7 20.1h6.4v6.4h-6.4v-6.4Zm0-8.3h6.4v6.4h-6.4v-6.4Z" fill="#27c5e3" />
-              <path d="M20.6 16h6.4v6.4h-6.4V16Zm8.2 0h6.4v6.4h-6.4V16Z" fill="#27c5e3" />
-              <text x="58" y="36" fill="#2c58c9" font-family="Segoe UI, Trebuchet MS, sans-serif" font-size="42">
-                apteka.md
-              </text>
-            </g>
-          </svg>
+          <img
+            class="search-logo-image"
+            src="https://www.apteka.md/_next/static/media/BigLogo.50692667.svg"
+            alt="Apteka"
+          />
         </a>
         <label class="search-input-wrap">
           <input type="text" placeholder="Искать по всем категориям" disabled />
