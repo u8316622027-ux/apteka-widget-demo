@@ -61,6 +61,8 @@ class DocsConsistencyTests(unittest.TestCase):
         self.assertIn("768px", standards)
         self.assertIn("1280px", standards)
         self.assertIn("Dependency gate", standards)
+        self.assertIn("text/html;profile=mcp-app", standards)
+        self.assertIn("self-contained", standards)
         self.assertIn("docs/frontend/decisions/", decisions_index)
 
     def test_architecture_doc_links_frontend_and_backend_docs(self) -> None:
