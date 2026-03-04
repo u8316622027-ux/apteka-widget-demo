@@ -5,8 +5,9 @@
 
 ## Rules
 1. `No inline CSS/JS`
-   - Большие блоки `<style>` и `<script>` в `.html` запрещены.
+   - Большие блоки `<style>` и `<script>` в `.html` запрещены для обычных веб-страниц.
    - Допустимо до 5 строк с пояснением причины и задачей на вынос.
+   - Исключение: шаблоны Apps SDK (`ui://widget/*.html`) используют self-contained bundle (inline CSS/JS), если внешние относительные ресурсы нестабильны в sandbox.
 2. `Styles location + naming`
    - Стили храним в `app/widgets/styles/`.
    - Формат: `widget-<name>.css` (пример: `widget-products.css`) или секция в общем файле с префиксом фичи.
@@ -42,3 +43,9 @@
    - Пройдены quality gates.
    - Сделана визуальная проверка на `320px`, `768px`, `1280px`.
    - В PR описано: что изменено, какие тесты добавлены, какие селекторы зафиксированы.
+
+## Apps SDK widget rules
+1. MCP resources для виджетов отдаются с `mimeType: text/html;profile=mcp-app`.
+2. Шаблоны `ui://widget/*.html` делаем self-contained, когда нужно гарантировать загрузку стилей/скриптов в ChatGPT sandbox.
+3. В `_meta.openai/widgetCSP.resource_domains` добавляем все домены, откуда грузятся ресурсы виджета.
+4. Для tool-driven UX предпочтительно `1 tool -> 1 template`, если состояния сильно отличаются.

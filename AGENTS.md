@@ -30,7 +30,8 @@ npx playwright test
 - Результат: `biome` / `ruff` / `pytest` / `playwright` (`pass`/`fail` и причина при `fail`).
 
 ### Frontend guardrails (кратко)
-- Не держать большие inline `<style>/<script>` в HTML; выносить в `app/widgets/styles/*`.
+- Для обычного web UI не держать большие inline `<style>/<script>` в HTML; выносить в `app/widgets/styles/*`.
+- Для Apps SDK `ui://widget/*.html` разрешен self-contained inline bundle, если это нужно для стабильной загрузки в sandbox.
 - Для bugfix UI обязателен TDD; для новых экранов тесты обязательны до merge.
 - Проверять адаптив на `320px`, `768px`, `1280px`.
 - Обеспечивать `Accessibility minimum`: `aria-label`, `:focus`, контраст, семантика, клавиатурная навигация.
