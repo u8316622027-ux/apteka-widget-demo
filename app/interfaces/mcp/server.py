@@ -508,7 +508,7 @@ def handle_rpc_request(
                 {
                     "uri": uri,
                     "name": relative_path,
-                    "mimeType": "text/html+skybridge",
+                    "mimeType": "text/html;profile=mcp-app",
                     "description": description,
                     "_meta": {
                         "openai/widgetDescription": description,
@@ -551,7 +551,7 @@ def handle_rpc_request(
                 "contents": [
                     {
                         "uri": normalized_uri,
-                        "mimeType": "text/html+skybridge",
+                        "mimeType": "text/html;profile=mcp-app",
                         "text": html_text,
                         "_meta": {
                             "openai/widgetDescription": str(resource_data["description"]),
