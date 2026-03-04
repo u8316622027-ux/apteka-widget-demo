@@ -56,13 +56,10 @@ class MCPFastAPIServerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "FastAPI transport requires"):
                 create_fastapi_app()
 
-    def test_create_fastapi_app_mounts_widgets_static_route(self) -> None:
+    def test_create_fastapi_app_does_not_require_staticfiles_module(self) -> None:
         class FakeApp:
             def __init__(self) -> None:
                 self.mounted: list[tuple[str, object, str]] = []
-
-            def mount(self, path: str, app: object, name: str | None = None) -> None:
-                self.mounted.append((path, app, str(name or "")))
 
             def get(self, _path: str):
                 def _decorator(func):
@@ -78,14 +75,9 @@ class MCPFastAPIServerTests(unittest.TestCase):
 
         fake_app = FakeApp()
 
-        class FakeStaticFiles:
-            def __init__(self, *, directory: str) -> None:
-                self.directory = directory
-
         module_map = {
             "fastapi": SimpleNamespace(FastAPI=lambda **kwargs: fake_app),
             "fastapi.responses": SimpleNamespace(Response=object, JSONResponse=object),
-            "fastapi.staticfiles": SimpleNamespace(StaticFiles=FakeStaticFiles),
         }
 
         with patch(
@@ -95,11 +87,7 @@ class MCPFastAPIServerTests(unittest.TestCase):
             app = create_fastapi_app()
 
         self.assertIs(app, fake_app)
-        self.assertTrue(fake_app.mounted)
-        mounted_path, mounted_app, mounted_name = fake_app.mounted[0]
-        self.assertEqual(mounted_path, "/widgets")
-        self.assertEqual(mounted_name, "widgets")
-        self.assertEqual(getattr(mounted_app, "directory", ""), "app/widgets")
+        self.assertFalse(fake_app.mounted)
 
 
 if __name__ == "__main__":
