@@ -47,7 +47,11 @@ _RUNTIME_METRICS: dict[str, Any] = {
 WIDGET_UI_CONFIG: dict[str, Any] = {
     "domain": "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
     "csp": {
-        "resourceDomains": ["https://api.apteka.md"],
+        "resourceDomains": [
+            "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+            "https://cdn.jsdelivr.net",
+            "https://api.apteka.md",
+        ],
     },
 }
 

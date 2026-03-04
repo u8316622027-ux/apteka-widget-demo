@@ -147,7 +147,12 @@ class MCPServerTests(unittest.TestCase):
             tool_payload["ui"]["domain"],
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
         )
-        self.assertEqual(tool_payload["ui"]["csp"]["resourceDomains"], ["https://api.apteka.md"])
+        self.assertIn(
+            "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+            tool_payload["ui"]["csp"]["resourceDomains"],
+        )
+        self.assertIn("https://cdn.jsdelivr.net", tool_payload["ui"]["csp"]["resourceDomains"])
+        self.assertIn("https://api.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("_meta", tool_payload)
         self.assertEqual(
             tool_payload["_meta"]["openai/outputTemplate"],
@@ -430,7 +435,11 @@ class MCPServerTests(unittest.TestCase):
         )
         self.assertEqual(
             contents[0]["_meta"]["openai/widgetCSP"]["resource_domains"],
-            ["https://api.apteka.md"],
+            [
+                "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+                "https://cdn.jsdelivr.net",
+                "https://api.apteka.md",
+            ],
         )
 
     def test_tools_call_requires_string_name(self) -> None:
