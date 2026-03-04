@@ -51,6 +51,23 @@ class DocsConsistencyTests(unittest.TestCase):
         self.assertIn("alpinejs", dependencies)
         self.assertIn("tailwindcss", dev_dependencies)
 
+    def test_frontend_docs_include_standards_and_decisions_index(self) -> None:
+        standards = self._read("docs/frontend/standards.md")
+        decisions_index = self._read("docs/frontend/decisions/README.md")
+
+        self.assertIn("No inline CSS/JS", standards)
+        self.assertIn("Accessibility minimum", standards)
+        self.assertIn("320px", standards)
+        self.assertIn("768px", standards)
+        self.assertIn("1280px", standards)
+        self.assertIn("Dependency gate", standards)
+        self.assertIn("docs/frontend/decisions/", decisions_index)
+
+    def test_architecture_doc_links_frontend_and_backend_docs(self) -> None:
+        content = self._read("docs/architecture/README.md")
+        self.assertIn("docs/frontend/standards.md", content)
+        self.assertIn("docs/backend/README.md", content)
+
 
 if __name__ == "__main__":
     unittest.main()
