@@ -67,6 +67,13 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn('class="carousel-bottom"', template_text)
         self.assertIn('class="section-divider"', template_text)
 
+    def test_products_template_limits_widget_height(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        compact = template_text.replace(" ", "")
+        self.assertIn("align-items:flex-start", compact)
+        self.assertIn("max-height:calc(100vh-32px)", compact)
+        self.assertIn("overflow-y:auto", compact)
+
 
 if __name__ == "__main__":
     unittest.main()
