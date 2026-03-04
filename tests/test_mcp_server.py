@@ -151,6 +151,7 @@ class MCPServerTests(unittest.TestCase):
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
             tool_payload["ui"]["csp"]["resourceDomains"],
         )
+        self.assertIn("https://www.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("https://cdn.jsdelivr.net", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("https://api.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("_meta", tool_payload)
@@ -437,6 +438,7 @@ class MCPServerTests(unittest.TestCase):
             contents[0]["_meta"]["openai/widgetCSP"]["resource_domains"],
             [
                 "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+                "https://www.apteka.md",
                 "https://cdn.jsdelivr.net",
                 "https://api.apteka.md",
             ],

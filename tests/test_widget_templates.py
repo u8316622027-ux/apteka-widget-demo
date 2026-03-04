@@ -87,8 +87,11 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_uses_clickable_official_logo(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn('href="https://www.apteka.md/"', template_text)
-        self.assertIn('class="search-logo-svg"', template_text)
-        self.assertIn("apteka.md", template_text)
+        self.assertIn('class="search-logo-image"', template_text)
+        self.assertIn(
+            'src="https://www.apteka.md/_next/static/media/BigLogo.50692667.svg"',
+            template_text,
+        )
 
     def test_products_template_removes_top_labels_and_shell_card(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
