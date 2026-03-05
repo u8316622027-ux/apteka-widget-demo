@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import gzip
+import hashlib
 import json
 import threading
 import unittest
@@ -834,6 +835,10 @@ class MCPServerTests(unittest.TestCase):
                             "cart_session_id": "sess-1",
                             "product_id": "A12",
                             "quantity": 2,
+                            "name": "Aspirin Cardio",
+                            "price": 31.17,
+                            "discount_price": 29.99,
+                            "manufacturer": "Bayer",
                         },
                     },
                 },
@@ -845,6 +850,10 @@ class MCPServerTests(unittest.TestCase):
             quantity=2,
             items=None,
             cart_session_id="sess-1",
+            name="Aspirin Cardio",
+            price=31.17,
+            discount_price=29.99,
+            manufacturer="Bayer",
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
@@ -883,9 +892,120 @@ class MCPServerTests(unittest.TestCase):
             quantity=None,
             items=[{"product_id": "20859", "quantity": 1}],
             cart_session_id="sess-1",
+            name=None,
+            price=None,
+            discount_price=None,
+            manufacturer=None,
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 2)
+
+    def test_tools_call_my_cart_uses_subject_fallback_when_arguments_empty(self) -> None:
+        registry = create_tool_registry()
+        subject = (
+            "v1/34yeCSl5CCCNz0KLyvYVFk2it1LGMK0y67ZuwKsBpdoIn7ausSnvPLX6i1hgBmqGv4eQehFzqnghSPxOY0J0nlKVCycy1fbRV37qpp1"
+        )
+        expected_session_id = hashlib.sha256(f"cart:v1:{subject}".encode("utf-8")).hexdigest()
+
+        with patch(
+            "app.interfaces.mcp.server.my_cart",
+            return_value={
+                "cart_session_id": expected_session_id,
+                "count": 1,
+                "items": [{"product_id": "20859", "quantity": 1}],
+            },
+        ) as mocked_my_cart:
+            my_cart_response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 802,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "my_cart",
+                        "_meta": {"openai/subject": subject},
+                        "arguments": {},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_my_cart.assert_called_once_with(cart_session_id=expected_session_id)
+        self.assertFalse(my_cart_response["result"]["isError"])
+        self.assertEqual(my_cart_response["result"]["structuredContent"]["count"], 1)
+
+    def test_tools_call_add_to_my_cart_uses_subject_fallback_when_arguments_missing_session(self) -> None:
+        registry = create_tool_registry()
+        subject = (
+            "v1/34yeCSl5CCCNz0KLyvYVFk2it1LGMK0y67ZuwKsBpdoIn7ausSnvPLX6i1hgBmqGv4eQehFzqnghSPxOY0J0nlKVCycy1fbRV37qpp1"
+        )
+        expected_session_id = hashlib.sha256(f"cart:v1:{subject}".encode("utf-8")).hexdigest()
+
+        with patch(
+            "app.interfaces.mcp.server.add_to_my_cart",
+            return_value={
+                "cart_session_id": expected_session_id,
+                "count": 1,
+                "items": [{"product_id": "20859", "quantity": 1}],
+            },
+        ) as mocked_add_to_my_cart:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 813,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "add_to_my_cart",
+                        "_meta": {"openai/subject": subject},
+                        "arguments": {"product_id": "20859"},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_add_to_my_cart.assert_called_once_with(
+            product_id="20859",
+            quantity=None,
+            items=None,
+            cart_session_id=expected_session_id,
+            name=None,
+            price=None,
+            discount_price=None,
+            manufacturer=None,
+        )
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+
+    def test_tools_call_my_cart_prioritizes_arguments_over_subject_fallback(self) -> None:
+        registry = create_tool_registry()
+        subject = (
+            "v1/34yeCSl5CCCNz0KLyvYVFk2it1LGMK0y67ZuwKsBpdoIn7ausSnvPLX6i1hgBmqGv4eQehFzqnghSPxOY0J0nlKVCycy1fbRV37qpp1"
+        )
+
+        with patch(
+            "app.interfaces.mcp.server.my_cart",
+            return_value={
+                "cart_session_id": "6a6094887f254e18801aef64fa342348",
+                "count": 0,
+                "items": [],
+            },
+        ) as mocked_my_cart:
+            my_cart_response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 812,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "my_cart",
+                        "_meta": {"openai/subject": subject},
+                        "arguments": {"cart_session_id": "6a6094887f254e18801aef64fa342348"},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_my_cart.assert_called_once_with(cart_session_id="6a6094887f254e18801aef64fa342348")
+        self.assertFalse(my_cart_response["result"]["isError"])
+        self.assertEqual(my_cart_response["result"]["structuredContent"]["count"], 0)
 
     def test_tools_call_checkout_order_delegates_to_checkout_tool(self) -> None:
         registry = create_tool_registry()

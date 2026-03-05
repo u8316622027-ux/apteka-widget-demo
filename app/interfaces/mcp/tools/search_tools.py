@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from typing import Any, Callable
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen as default_urlopen
 
 from app.domain.products.entities import ProductSummary
@@ -58,7 +59,29 @@ def search_products(
 
     effective_repository = repository or AptekaSearchRepository()
     service = ProductSearchService(effective_repository)
-    products = service.search_products(query, limit=limit)
+    try:
+        products = service.search_products(query, limit=limit)
+    except HTTPError as error:
+        retryable = 500 <= int(error.code) < 600
+        return {
+            "query": query.strip(),
+            "count": 0,
+            "products": [],
+            "upstream_error": {
+                "status_code": int(error.code),
+                "retryable": retryable,
+            },
+        }
+    except URLError:
+        return {
+            "query": query.strip(),
+            "count": 0,
+            "products": [],
+            "upstream_error": {
+                "status_code": None,
+                "retryable": True,
+            },
+        }
     return {
         "query": query.strip(),
         "count": len(products),

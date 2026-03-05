@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections import OrderedDict
 import gzip
+import hashlib
 import json
 import logging
 import os
@@ -101,11 +102,23 @@ def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     items_value = arguments.get("items")
     items = items_value if isinstance(items_value, list) else None
     cart_session_id = arguments.get("cart_session_id")
+    name = arguments.get("name")
+    price = arguments.get("price")
+    discount_price = arguments.get("discount_price")
+    manufacturer = arguments.get("manufacturer")
     return add_to_my_cart(
         product_id=product_id,
         quantity=quantity,
         items=items,
         cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
+        name=str(name) if isinstance(name, str) else None,
+        price=float(price) if isinstance(price, (int, float)) and not isinstance(price, bool) else None,
+        discount_price=(
+            float(discount_price)
+            if isinstance(discount_price, (int, float)) and not isinstance(discount_price, bool)
+            else None
+        ),
+        manufacturer=str(manufacturer) if isinstance(manufacturer, str) else None,
     )
 
 
@@ -198,6 +211,10 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                         "minimum": 0,
                         "description": "Deprecated. For single product only; prefer items[].",
                     },
+                    "name": {"type": "string"},
+                    "price": {"type": "number"},
+                    "discount_price": {"type": "number"},
+                    "manufacturer": {"type": "string"},
                     "items": {
                         "type": "array",
                         "items": {
@@ -205,6 +222,10 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                             "properties": {
                                 "product_id": {"type": "string"},
                                 "quantity": {"type": "integer", "minimum": 0},
+                                "name": {"type": "string"},
+                                "price": {"type": "number"},
+                                "discount_price": {"type": "number"},
+                                "manufacturer": {"type": "string"},
                             },
                             "required": ["product_id", "quantity"],
                         },
@@ -394,6 +415,71 @@ def _decorate_tool_result(
         "ui": tool.ui,
     }
     return payload
+
+
+def _normalize_cart_session_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _tool_uses_cart_session(tool_name: str) -> bool:
+    return tool_name in {"my_cart", "add_to_my_cart", "checkout_order"}
+
+
+def _derive_cart_session_id_from_subject(subject: str | None) -> str | None:
+    if subject is None:
+        return None
+    normalized_subject = subject.strip()
+    if not normalized_subject:
+        return None
+    digest = hashlib.sha256(f"cart:v1:{normalized_subject}".encode("utf-8")).hexdigest()
+    return digest
+
+
+def _extract_openai_subject_from_params(params: dict[str, Any]) -> str | None:
+    meta = params.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    value = meta.get("openai/subject")
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _resolve_tool_arguments_with_cart_session_fallback(
+    *,
+    tool_name: str,
+    arguments: dict[str, Any],
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    if not _tool_uses_cart_session(tool_name):
+        return arguments
+
+    incoming_session_id = _normalize_cart_session_id(arguments.get("cart_session_id"))
+    if incoming_session_id is not None:
+        resolved_arguments = dict(arguments)
+        resolved_arguments["cart_session_id"] = incoming_session_id
+        return resolved_arguments
+
+    subject = _extract_openai_subject_from_params(params)
+    derived_session_id = _derive_cart_session_id_from_subject(subject)
+    if derived_session_id is None:
+        return arguments
+
+    resolved_arguments = dict(arguments)
+    resolved_arguments["cart_session_id"] = derived_session_id
+    logger.debug(
+        "mcp_cart_session_resolved_from_subject",
+        extra={
+            "tool_name": tool_name,
+            "cart_session_source": "openai_subject_hash",
+            "cart_session_id_prefix": derived_session_id[:12],
+        },
+    )
+    return resolved_arguments
 
 
 def _reset_server_caches_for_tests() -> None:
@@ -594,12 +680,18 @@ def handle_rpc_request(
         if tool is None:
             return _rpc_error(request_id, -32601, f"Tool not found: {tool_name}")
 
-        validation_error = _validate_input_schema(arguments, tool.input_schema)
+        resolved_arguments = _resolve_tool_arguments_with_cart_session_fallback(
+            tool_name=tool_name,
+            arguments=arguments,
+            params=params,
+        )
+
+        validation_error = _validate_input_schema(resolved_arguments, tool.input_schema)
         if validation_error is not None:
             return _rpc_error(request_id, -32602, f"Invalid params: {validation_error}")
 
         cache_ttl_seconds = _get_tool_cache_ttl_seconds(tool_name)
-        cache_key = _build_tool_cache_key(tool_name, arguments)
+        cache_key = _build_tool_cache_key(tool_name, resolved_arguments)
         started_at = _perf_counter()
         if cache_ttl_seconds is not None and cache_key is not None:
             cached_payload = _get_cached_tool_payload(cache_key)
@@ -622,7 +714,7 @@ def handle_rpc_request(
                 }
 
         try:
-            result_payload = tool.handler(arguments)
+            result_payload = tool.handler(resolved_arguments)
             structured_payload = _decorate_tool_result(tool_name, tool, result_payload)
             if cache_ttl_seconds is not None and cache_key is not None:
                 _set_cached_tool_payload(

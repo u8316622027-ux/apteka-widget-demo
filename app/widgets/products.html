@@ -873,6 +873,7 @@
             </footer>
           </section>
         </div>
+
       </div>
     </main>
     <script>
@@ -888,13 +889,11 @@
         const MAX_SEARCH_ATTEMPTS = 3;
         const INITIAL_PAYLOAD_WAIT_MS = 5000;
         const INITIAL_PAYLOAD_POLL_MS = 140;
-        const CART_ENDPOINT = "https://stage.apteka.md/api/v1/front/cart";
-        const CART_ADD_ENDPOINT = "https://stage.apteka.md/api/v1/front/cart/add";
         const LOCAL_CART_KEY = "apteka_widget_cart";
         const CART_ITEMS_KEY = "apteka_widget_cart_items";
-        const CART_SESSION_KEY = "apteka_cart_session_id";
-        const CART_TOKEN_KEY = "apteka_cart_token";
+        const LOCAL_CART_SESSION_ID_KEY = "apteka_widget_cart_session_id";
         const FALLBACK_IMAGE = "https://api.apteka.md/assets/images/placeholder-600x600.png";
+        const memoryStorage = Object.create(null);
 
         const state = {
           loadedOnce: false,
@@ -903,7 +902,6 @@
           products: [],
           lastQuery: "",
         };
-        let cartSyncQueue = Promise.resolve();
 
         const input = document.getElementById("products-search-input");
         const searchButton = document.getElementById("products-search-button");
@@ -919,6 +917,25 @@
         const cartModalTotal = document.getElementById("products-cart-total");
 
         const normalizeText = (value) => String(value || "").trim();
+        const debugLog = () => {};
+        const readStorageValue = (key) => {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (_error) {
+            debugLog("storage_read_fallback", { key });
+            return Object.prototype.hasOwnProperty.call(memoryStorage, key) ? String(memoryStorage[key]) : null;
+          }
+        };
+        const writeStorageValue = (key, value) => {
+          const normalizedValue = String(value);
+          try {
+            window.localStorage.setItem(key, normalizedValue);
+            return;
+          } catch (_error) {
+            memoryStorage[key] = normalizedValue;
+            debugLog("storage_write_fallback", { key });
+          }
+        };
         const toMoney = (value) => {
           if (typeof value !== "number" || Number.isNaN(value)) {
             return "";
@@ -1088,70 +1105,55 @@
           };
         };
 
-        const getOrCreateCartSessionId = () => {
-          const stored = normalizeText(localStorage.getItem(CART_SESSION_KEY));
-          if (stored) {
-            return stored;
-          }
-          const next =
-            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-              ? crypto.randomUUID()
-              : `session-${Date.now()}`;
-          localStorage.setItem(CART_SESSION_KEY, next);
-          return next;
-        };
-
-        const readCartToken = () => {
-          const accessToken = normalizeText(localStorage.getItem(CART_TOKEN_KEY));
-          if (!accessToken) {
-            return null;
-          }
-          return { tokenType: "Bearer", accessToken };
-        };
-
-        const writeCartToken = (token) => {
-          if (!token || !token.accessToken) {
-            return;
-          }
-          localStorage.setItem(CART_TOKEN_KEY, token.accessToken);
-        };
-
-        const ensureCartToken = async () => {
-          const existing = readCartToken();
-          if (existing) {
-            return existing;
-          }
-          const response = await fetch(CART_ENDPOINT, { method: "GET" });
-          const payload = await response.json();
-          const accessToken = normalizeText(payload?.accessToken);
-          if (!accessToken) {
-            throw new Error("cart token is missing");
-          }
-          const token = { tokenType: normalizeText(payload?.tokenType) || "Bearer", accessToken };
-          writeCartToken(token);
-          return token;
-        };
-
-        const syncCartAddToBackend = async (productId) => {
+        const callAddToMyCart = (product) => {
+          const productId = normalizeText(product?.id);
           if (!productId) {
-            return;
+            debugLog("call_add_to_my_cart_skipped", { reason: "empty_product_id" });
+            return Promise.resolve();
           }
-          getOrCreateCartSessionId();
-          const token = await ensureCartToken();
-          await fetch(CART_ADD_ENDPOINT, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `${token.tokenType} ${token.accessToken}`,
-            },
-            body: JSON.stringify({ product_id: productId, quantity: 1, json: true }),
-            keepalive: true,
+          const payload = {
+            product_id: productId,
+            name: normalizeText(product?.name) || undefined,
+            price: typeof product?.price === "number" ? product.price : undefined,
+            discount_price:
+              typeof product?.discountPrice === "number" ? product.discountPrice : undefined,
+            manufacturer: normalizeText(product?.manufacturer) || undefined,
+          };
+          debugLog("call_add_to_my_cart_start", { productId, source: "subject_fallback" });
+          if (typeof window.openai?.callTool !== "function") {
+            debugLog("call_add_to_my_cart_error", { reason: "openai.callTool unavailable" });
+            return Promise.reject(new Error("openai.callTool is unavailable"));
+          }
+          return window.openai.callTool("add_to_my_cart", payload).then((result) => {
+            debugLog("call_add_to_my_cart_done", {
+              hasStructuredContent: Boolean(result && result.structuredContent),
+            });
+            return result;
           });
+        };
+
+        const callSetCartItemQuantity = (productId, quantity, itemMeta) => {
+          const normalizedProductId = normalizeText(productId);
+          if (!normalizedProductId) {
+            return Promise.resolve();
+          }
+          if (typeof window.openai?.callTool !== "function") {
+            return Promise.reject(new Error("openai.callTool is unavailable"));
+          }
+          const payloadItem = {
+            product_id: normalizedProductId,
+            quantity,
+            name: normalizeText(itemMeta?.name) || undefined,
+            manufacturer: normalizeText(itemMeta?.manufacturer) || undefined,
+            price: typeof itemMeta?.price === "number" ? itemMeta.price : undefined,
+            discount_price: typeof itemMeta?.discountPrice === "number" ? itemMeta.discountPrice : undefined,
+          };
+          return window.openai.callTool("add_to_my_cart", { items: [payloadItem] });
         };
 
         const readLocalCartCount = () => {
           try {
-            const payload = JSON.parse(localStorage.getItem(LOCAL_CART_KEY) || "{}");
+            const payload = JSON.parse(readStorageValue(LOCAL_CART_KEY) || "{}");
             if (!payload || typeof payload !== "object") {
               return 0;
             }
@@ -1169,11 +1171,11 @@
             return;
           }
           try {
-            const payload = JSON.parse(localStorage.getItem(LOCAL_CART_KEY) || "{}");
+            const payload = JSON.parse(readStorageValue(LOCAL_CART_KEY) || "{}");
             const next = payload && typeof payload === "object" ? payload : {};
             const prev = Number(next[productId]);
             next[productId] = Number.isFinite(prev) && prev > 0 ? prev + 1 : 1;
-            localStorage.setItem(LOCAL_CART_KEY, JSON.stringify(next));
+            writeStorageValue(LOCAL_CART_KEY, JSON.stringify(next));
           } catch (_error) {
             return;
           }
@@ -1181,7 +1183,7 @@
 
         const readLocalCart = () => {
           try {
-            const payload = JSON.parse(localStorage.getItem(LOCAL_CART_KEY) || "{}");
+            const payload = JSON.parse(readStorageValue(LOCAL_CART_KEY) || "{}");
             return payload && typeof payload === "object" ? payload : {};
           } catch (_error) {
             return {};
@@ -1189,12 +1191,12 @@
         };
 
         const writeLocalCart = (next) => {
-          localStorage.setItem(LOCAL_CART_KEY, JSON.stringify(next));
+          writeStorageValue(LOCAL_CART_KEY, JSON.stringify(next));
         };
 
         const readCartItems = () => {
           try {
-            const payload = JSON.parse(localStorage.getItem(CART_ITEMS_KEY) || "{}");
+            const payload = JSON.parse(readStorageValue(CART_ITEMS_KEY) || "{}");
             return payload && typeof payload === "object" ? payload : {};
           } catch (_error) {
             return {};
@@ -1202,7 +1204,18 @@
         };
 
         const writeCartItems = (next) => {
-          localStorage.setItem(CART_ITEMS_KEY, JSON.stringify(next));
+          writeStorageValue(CART_ITEMS_KEY, JSON.stringify(next));
+        };
+
+        const readStoredCartSessionId = () => normalizeText(readStorageValue(LOCAL_CART_SESSION_ID_KEY));
+
+        const writeStoredCartSessionId = (sessionId) => {
+          writeStorageValue(LOCAL_CART_SESSION_ID_KEY, normalizeText(sessionId));
+        };
+
+        const clearLocalCartState = () => {
+          writeLocalCart({});
+          writeCartItems({});
         };
 
         const ensureLocalCartBootstrap = () => {
@@ -1210,7 +1223,6 @@
           const localItems = readCartItems();
           writeLocalCart(localCart);
           writeCartItems(localItems);
-          getOrCreateCartSessionId();
         };
 
         const rememberCartItem = (productId) => {
@@ -1258,22 +1270,24 @@
             return false;
           }
 
-          const sessionId =
-            normalizeText(snapshot.cart_session_id) ||
-            normalizeText(snapshot.cartSessionId) ||
-            normalizeText(snapshot.session_id) ||
-            normalizeText(snapshot.sessionId);
-          if (sessionId) {
-            localStorage.setItem(CART_SESSION_KEY, sessionId);
+          const nextSessionId = normalizeText(snapshot.cart_session_id || snapshot.cartSessionId);
+          const storedSessionId = readStoredCartSessionId();
+          if (nextSessionId && storedSessionId && storedSessionId !== nextSessionId) {
+            clearLocalCartState();
+          }
+          if (nextSessionId) {
+            writeStoredCartSessionId(nextSessionId);
           }
 
           const sourceItems = Array.isArray(snapshot.items) ? snapshot.items : [];
           if (!sourceItems.length) {
+            writeLocalCart({});
+            writeCartItems({});
             renderCartBadge();
             if (cartModal && !cartModal.hidden) {
               renderCartModal();
             }
-            return Boolean(sessionId);
+            return true;
           }
 
           const nextCart = {};
@@ -1319,6 +1333,49 @@
           return true;
         };
 
+        const hasCartItemStructure = (items) => {
+          if (!Array.isArray(items)) {
+            return false;
+          }
+          if (!items.length) {
+            return true;
+          }
+          return items.some((item) => {
+            if (!item || typeof item !== "object") {
+              return false;
+            }
+            const productId =
+              normalizeText(item.product_id) ||
+              normalizeText(item.productId) ||
+              normalizeText(item.sku);
+            const hasQuantity =
+              Object.prototype.hasOwnProperty.call(item, "quantity") ||
+              Object.prototype.hasOwnProperty.call(item, "count");
+            return Boolean(productId) && hasQuantity;
+          });
+        };
+
+        const isCartSnapshotCandidate = (candidate) => {
+          if (!candidate || typeof candidate !== "object") {
+            return false;
+          }
+          const hasCartKeys =
+            Boolean(normalizeText(candidate.cart_session_id || candidate.cartSessionId)) ||
+            Object.prototype.hasOwnProperty.call(candidate, "cart_created") ||
+            Object.prototype.hasOwnProperty.call(candidate, "cartCreated") ||
+            Object.prototype.hasOwnProperty.call(candidate, "count") ||
+            Object.prototype.hasOwnProperty.call(candidate, "total");
+          if (!hasCartKeys) {
+            return false;
+          }
+          const items = Array.isArray(candidate.items)
+            ? candidate.items
+            : Array.isArray(candidate.cart?.items)
+              ? candidate.cart.items
+              : [];
+          return hasCartItemStructure(items);
+        };
+
         const syncLocalCartFromToolPayload = (payload) => {
           if (!payload || typeof payload !== "object") {
             return false;
@@ -1337,25 +1394,21 @@
             if (!candidate || typeof candidate !== "object") {
               continue;
             }
-            if (
-              normalizeText(candidate.cart_session_id) ||
-              normalizeText(candidate.cartSessionId) ||
-              Array.isArray(candidate.items) ||
-              Array.isArray(candidate.cart?.items)
-            ) {
-              const merged = {
-                ...candidate,
-                cart_session_id:
-                  candidate.cart_session_id || candidate.cartSessionId || candidate.cart?.cart_session_id || candidate.cart?.cartSessionId,
-                items: Array.isArray(candidate.items)
-                  ? candidate.items
-                  : Array.isArray(candidate.cart?.items)
-                    ? candidate.cart?.items
-                    : [],
-              };
-              if (applyCartSnapshot(merged)) {
-                return true;
-              }
+            if (!isCartSnapshotCandidate(candidate)) {
+              continue;
+            }
+            const merged = {
+              ...candidate,
+              cart_session_id:
+                candidate.cart_session_id || candidate.cartSessionId || candidate.cart?.cart_session_id || candidate.cart?.cartSessionId,
+              items: Array.isArray(candidate.items)
+                ? candidate.items
+                : Array.isArray(candidate.cart?.items)
+                  ? candidate.cart?.items
+                  : [],
+            };
+            if (applyCartSnapshot(merged)) {
+              return true;
             }
           }
           return false;
@@ -1541,6 +1594,18 @@
               `;
             })
             .join("");
+
+          const addButtons = track.querySelectorAll('[data-action="add-to-cart"]');
+          for (const button of addButtons) {
+            if (!(button instanceof HTMLElement)) {
+              continue;
+            }
+            button.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              addToCart(normalizeText(button.dataset.productId));
+            });
+          }
 
           updateCarouselControls();
         };
@@ -1736,15 +1801,22 @@
         };
 
         const addToCart = (productId) => {
+          debugLog("add_to_cart_click", { productId });
           writeLocalCartAdd(productId);
+          const product = state.products.find((item) => item.id === productId) || null;
           rememberCartItem(productId);
           renderCartBadge();
           if (cartModal && !cartModal.hidden) {
             renderCartModal();
           }
-          cartSyncQueue = cartSyncQueue
-            .then(() => syncCartAddToBackend(productId))
+          Promise.resolve(callAddToMyCart(product))
+            .then((result) => {
+              syncLocalCartFromToolPayload(result);
+            })
             .catch((error) => {
+              debugLog("call_add_to_my_cart_error", {
+                message: String(error && error.message ? error.message : error),
+              });
               console.error("products cart sync failed", error);
               return null;
             });
@@ -1769,9 +1841,25 @@
         if (track) {
           track.addEventListener("scroll", updateCarouselControls);
           track.addEventListener("click", (event) => {
+            const path =
+              typeof event.composedPath === "function"
+                ? event.composedPath()
+                : [];
+            const pathButton = path.find(
+              (node) =>
+                node instanceof Element &&
+                node.matches?.('[data-action="add-to-cart"]'),
+            );
             const target = event.target;
-            const actionButton =
-              target instanceof Element ? target.closest('[data-action="add-to-cart"]') : target?.parentElement?.closest('[data-action="add-to-cart"]');
+            const fallbackButton =
+              target instanceof Element
+                ? target.closest('[data-action="add-to-cart"]')
+                : target?.parentElement?.closest('[data-action="add-to-cart"]');
+            const actionButton = pathButton || fallbackButton;
+            debugLog("track_click", {
+              hasPathButton: Boolean(pathButton),
+              hasFallbackButton: Boolean(fallbackButton),
+            });
             if (actionButton instanceof HTMLElement) {
               addToCart(normalizeText(actionButton.dataset.productId));
             }
@@ -1861,6 +1949,16 @@
             writeLocalCart(payload);
             renderCartBadge();
             renderCartModal();
+            const itemMeta = readCartItems()[productId];
+            Promise.resolve(callSetCartItemQuantity(productId, Number(payload[productId] || 0), itemMeta))
+              .then((result) => {
+                syncLocalCartFromToolPayload(result);
+              })
+              .catch((error) => {
+                debugLog("call_add_to_my_cart_error", {
+                  message: String(error && error.message ? error.message : error),
+                });
+              });
           });
         }
 
@@ -1871,6 +1969,10 @@
         });
 
         ensureLocalCartBootstrap();
+        debugLog("widget_bootstrap", {
+          hasOpenAi: Boolean(window.openai),
+          hasCallTool: typeof window.openai?.callTool === "function",
+        });
         renderCartBadge();
         setLoading(true);
         renderProducts();

@@ -107,11 +107,9 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("background:transparent", compact)
         self.assertNotIn("background:#1a1d23", compact)
 
-    def test_products_template_calls_search_and_cart_add_endpoints(self) -> None:
+    def test_products_template_calls_search_endpoint(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("https://stage.apteka.md/api/v1/front/search", template_text)
-        self.assertIn("https://stage.apteka.md/api/v1/front/cart", template_text)
-        self.assertIn("/add", template_text)
         self.assertIn("localStorage", template_text)
         self.assertIn("AbortController", template_text)
         self.assertIn("MAX_SEARCH_ATTEMPTS", template_text)
@@ -138,6 +136,8 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn('target.closest(\'[data-action="add-to-cart"]\')', template_text)
         self.assertIn("target instanceof Element ? target.closest", template_text)
         self.assertIn("target?.parentElement?.closest", template_text)
+        self.assertIn("event.composedPath", template_text)
+        self.assertIn('querySelectorAll(\'[data-action="add-to-cart"]\')', template_text)
 
     def test_products_template_normalizes_product_image_urls(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
@@ -207,6 +207,12 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("data-action=\"cart-decrease\"", template_text)
         self.assertIn("data-action=\"cart-increase\"", template_text)
 
+    def test_products_template_hides_debug_log_panel(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertNotIn('id="products-debug-log"', template_text)
+        self.assertNotIn('id="products-debug-copy"', template_text)
+        self.assertNotIn("Debug logs", template_text)
+
     def test_products_template_has_mobile_toolbar_layout(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         compact = template_text.replace(" ", "")
@@ -228,12 +234,33 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("add-to-cart-button--ghost", template_text)
         self.assertIn("disabled", template_text)
 
-    def test_products_template_uses_cart_session_token_flow(self) -> None:
+    def test_products_template_uses_subject_based_cart_tool_flow(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
-        self.assertIn("CART_SESSION_KEY", template_text)
-        self.assertIn("CART_TOKEN_KEY", template_text)
-        self.assertIn("Authorization", template_text)
-        self.assertIn("cart/add", template_text)
+        self.assertIn("callTool", template_text)
+        self.assertIn("add_to_my_cart", template_text)
+        self.assertIn("discount_price", template_text)
+        self.assertIn("manufacturer", template_text)
+        self.assertNotIn("CART_SESSION_KEY", template_text)
+        self.assertNotIn("CART_TOKEN_KEY", template_text)
+        self.assertNotIn("Authorization", template_text)
+        self.assertNotIn("cart/add", template_text)
+
+    def test_products_template_sends_add_to_cart_without_waiting_backend_response(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertIn("const callAddToMyCart = (product) =>", template_text)
+        self.assertIn("Promise.resolve(callAddToMyCart(product))", template_text)
+        self.assertIn("syncLocalCartFromToolPayload(result)", template_text)
+        self.assertIn("const callSetCartItemQuantity = (productId, quantity, itemMeta) =>", template_text)
+        self.assertIn('debugLog("add_to_cart_click"', template_text)
+        self.assertIn('debugLog("call_add_to_my_cart_start"', template_text)
+        self.assertIn('debugLog("call_add_to_my_cart_error"', template_text)
+
+    def test_products_template_uses_safe_storage_fallback_for_cart_flow(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertIn("const memoryStorage = Object.create(null);", template_text)
+        self.assertIn("const readStorageValue = (key) =>", template_text)
+        self.assertIn("const writeStorageValue = (key, value) =>", template_text)
+        self.assertNotIn("readStorageValue(CART_SESSION_KEY)", template_text)
 
     def test_products_template_cart_modal_uses_local_cart_even_without_saved_item_meta(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
@@ -245,6 +272,8 @@ class WidgetTemplateTests(unittest.TestCase):
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("applyCartSnapshot", template_text)
         self.assertIn("syncLocalCartFromToolPayload", template_text)
+        self.assertIn("isCartSnapshotCandidate", template_text)
+        self.assertIn("hasCartItemStructure", template_text)
         self.assertIn("candidate.cart_session_id", template_text)
         self.assertIn("candidate.cart?.items", template_text)
         self.assertIn("writeLocalCart(", template_text)
@@ -253,8 +282,13 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_bootstraps_local_cart_storage(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("ensureLocalCartBootstrap", template_text)
-        self.assertIn("localStorage.setItem(LOCAL_CART_KEY", template_text)
-        self.assertIn("localStorage.setItem(CART_ITEMS_KEY", template_text)
+        self.assertIn("writeStorageValue(LOCAL_CART_KEY", template_text)
+        self.assertIn("writeStorageValue(CART_ITEMS_KEY", template_text)
+        self.assertIn("LOCAL_CART_SESSION_ID_KEY", template_text)
+        self.assertIn("readStoredCartSessionId", template_text)
+        self.assertIn("writeStoredCartSessionId", template_text)
+        self.assertIn("clearLocalCartState", template_text)
+        self.assertIn("storedSessionId !== nextSessionId", template_text)
 
     def test_products_template_uses_loading_blur_overlay(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
