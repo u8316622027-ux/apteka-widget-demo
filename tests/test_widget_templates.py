@@ -205,8 +205,17 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("toggleCartModal", template_text)
         self.assertIn("renderCartModal", template_text)
         self.assertIn("CART_ITEMS_KEY", template_text)
-        self.assertIn("data-action=\"cart-decrease\"", template_text)
-        self.assertIn("data-action=\"cart-increase\"", template_text)
+        self.assertIn('decrease.dataset.action = "cart-decrease"', template_text)
+        self.assertIn('increase.dataset.action = "cart-increase"', template_text)
+
+    def test_products_template_renders_cart_modal_without_innerhtml_for_items(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "cartModalItems.innerHTML = '<p class=\"cart-modal-empty\">В корзине пока нет товаров</p>';",
+            template_text,
+        )
+        self.assertNotIn("cartModalItems.innerHTML = rows", template_text)
+        self.assertIn("document.createElement(\"article\")", template_text)
 
     def test_products_template_hides_debug_log_panel(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
@@ -249,13 +258,18 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_sends_add_to_cart_without_waiting_backend_response(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("const callAddToMyCart = (product) =>", template_text)
-        self.assertIn("Promise.resolve(callAddToMyCart(product))", template_text)
-        self.assertIn("syncLocalCartFromToolPayload(result)", template_text)
+        self.assertIn("enqueueCartSync(() => callAddToMyCart(product))", template_text)
+        self.assertIn("state.cartSyncQueue = state.cartSyncQueue.catch(() => null).then(run)", template_text)
         self.assertIn("const callSetCartItemQuantity = () =>", template_text)
         self.assertIn('window.openai.callTool("add_to_my_cart", { items: payloadItems })', template_text)
+        self.assertIn("image_url: normalizeText(product?.imageUrl) || undefined", template_text)
+        self.assertIn("image_url: normalizeText(itemMeta?.imageUrl) || undefined", template_text)
         self.assertIn('debugLog("add_to_cart_click"', template_text)
         self.assertIn('debugLog("call_add_to_my_cart_start"', template_text)
         self.assertIn('debugLog("call_add_to_my_cart_error"', template_text)
+        self.assertIn("const escapeHtml = (value) =>", template_text)
+        self.assertIn("replaceAll(\"<\", \"&lt;\")", template_text)
+        self.assertIn("replaceAll(\">\", \"&gt;\")", template_text)
 
     def test_products_template_uses_safe_storage_fallback_for_cart_flow(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
@@ -285,8 +299,11 @@ class WidgetTemplateTests(unittest.TestCase):
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("ensureLocalCartBootstrap", template_text)
         self.assertIn("bootstrapCartFromBackend", template_text)
-        self.assertIn('window.openai.callTool("my_cart", {})', template_text)
-        self.assertIn("Promise.resolve(bootstrapCartFromBackend())", template_text)
+        self.assertIn("ensureCartBootstrapWithRetry", template_text)
+        self.assertIn('window.openai.callTool("my_cart", {', template_text)
+        self.assertIn("cart_session_id: storedSessionId || undefined", template_text)
+        self.assertIn("Promise.resolve(ensureCartBootstrapWithRetry())", template_text)
+        self.assertNotIn("if (readLocalCartCount() <= 0)", template_text)
         self.assertIn("writeStorageValue(LOCAL_CART_KEY", template_text)
         self.assertIn("writeStorageValue(CART_ITEMS_KEY", template_text)
         self.assertIn("LOCAL_CART_SESSION_ID_KEY", template_text)

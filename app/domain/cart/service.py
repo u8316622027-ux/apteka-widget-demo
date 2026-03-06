@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import asdict
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import threading
 from typing import Callable
 from uuid import uuid4
 
-from app.domain.cart.entities import CartSnapshot, CartToken
+from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
 from app.domain.cart.repository import CartApiRepository, CartTokenStore
 
 _SESSION_LOCK_GUARD = threading.Lock()
@@ -52,9 +52,10 @@ class CartService:
         cart_session_id: str | None = None,
         use_add_endpoint: bool = False,
         name: str | None = None,
-        price: float | None = None,
-        discount_price: float | None = None,
+        price: Decimal | None = None,
+        discount_price: Decimal | None = None,
         manufacturer: str | None = None,
+        image_url: str | None = None,
         item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
     ) -> dict[str, object]:
         session_id, token, created = self._ensure_session(cart_session_id)
@@ -91,6 +92,7 @@ class CartService:
                 price=price,
                 discount_price=discount_price,
                 manufacturer=manufacturer,
+                image_url=image_url,
             )
             snapshot = self._repository.add_item(
                 token,
@@ -104,6 +106,7 @@ class CartService:
                 price=price,
                 discount_price=discount_price,
                 manufacturer=manufacturer,
+                image_url=image_url,
             )
             next_meta_by_product_id = dict(item_meta_by_product_id or {})
             if item_meta:
@@ -159,9 +162,11 @@ class CartService:
             if item.manufacturer is not None:
                 meta["manufacturer"] = item.manufacturer
             if item.price is not None:
-                meta["price"] = float(item.price)
+                meta["price"] = _money_to_wire(item.price)
             if item.discount_price is not None:
-                meta["discount_price"] = float(item.discount_price)
+                meta["discount_price"] = _money_to_wire(item.discount_price)
+            if item.image_url is not None:
+                meta["image_url"] = item.image_url
             if meta:
                 merged_item_meta_by_product_id[item.product_id] = meta
 
@@ -176,9 +181,15 @@ class CartService:
                 if product_id not in merged_quantities:
                     continue
                 cleaned_meta: dict[str, object] = {}
-                for key in ("name", "manufacturer", "price", "discount_price"):
+                for key in ("name", "manufacturer", "price", "discount_price", "image_url"):
                     value = raw_meta.get(key)
                     if value is None:
+                        continue
+                    if key in ("price", "discount_price"):
+                        parsed_money = _coerce_money(value)
+                        if parsed_money is None:
+                            continue
+                        cleaned_meta[key] = _money_to_wire(parsed_money)
                         continue
                     cleaned_meta[key] = value
                 if cleaned_meta:
@@ -204,9 +215,10 @@ class CartService:
         self,
         *,
         name: str | None,
-        price: float | None,
-        discount_price: float | None,
+        price: Decimal | None,
+        discount_price: Decimal | None,
         manufacturer: str | None,
+        image_url: str | None,
     ) -> dict[str, object] | None:
         payload: dict[str, object] = {}
         normalized_name = (name or "").strip()
@@ -215,10 +227,13 @@ class CartService:
             payload["name"] = normalized_name
         if normalized_manufacturer:
             payload["manufacturer"] = normalized_manufacturer
+        normalized_image_url = (image_url or "").strip()
+        if normalized_image_url:
+            payload["image_url"] = normalized_image_url
         if price is not None:
-            payload["price"] = float(price)
+            payload["price"] = _money_to_wire(price)
         if discount_price is not None:
-            payload["discount_price"] = float(discount_price)
+            payload["discount_price"] = _money_to_wire(discount_price)
         if not payload:
             return None
         return payload
@@ -248,8 +263,8 @@ class CartService:
             "cart_session_id": session_id,
             "cart_created": created,
             "count": snapshot.count,
-            "total": snapshot.total,
-            "items": [asdict(item) for item in snapshot.items],
+            "total": _money_to_wire(snapshot.total),
+            "items": [_serialize_cart_item(item) for item in snapshot.items],
         }
 
 
@@ -273,3 +288,35 @@ def _session_update_lock(session_id: str):
                 current.users -= 1
                 if current.users <= 0:
                     _SESSION_LOCKS.pop(session_id, None)
+
+
+def _serialize_cart_item(item: CartItem) -> dict[str, object]:
+    return {
+        "product_id": item.product_id,
+        "quantity": item.quantity,
+        "name": item.name,
+        "price": _money_to_wire(item.price),
+        "discount_price": _money_to_wire(item.discount_price),
+        "manufacturer": item.manufacturer,
+        "image_url": item.image_url,
+    }
+
+
+def _coerce_money(value: object) -> Decimal | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float, str)):
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+    return None
+
+
+def _money_to_wire(value: Decimal | None | object) -> float | None:
+    normalized = _coerce_money(value)
+    if normalized is None:
+        return None
+    return float(normalized.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))

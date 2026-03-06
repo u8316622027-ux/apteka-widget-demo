@@ -12,7 +12,6 @@ import os
 from pathlib import Path
 import threading
 from functools import lru_cache
-from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import monotonic as _monotonic
@@ -21,11 +20,17 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from app.core.config import get_settings
-from app.interfaces.mcp.tools.apteka_urls import get_apteka_base_url
+from app.interfaces.mcp.tool_registry import (
+    ToolDefinition,
+    create_tool_registry as _create_tool_registry_base,
+    decorate_tool_result,
+    serialize_tool_definition,
+)
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.checkout_tools import checkout_order
 from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
+from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
 from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
@@ -46,47 +51,6 @@ _RUNTIME_METRICS: dict[str, Any] = {
     "cache_misses_total": 0,
     "tools": {},
 }
-def _build_widget_ui_config() -> dict[str, Any]:
-    apteka_base_url = get_apteka_base_url()
-    resource_domains = [
-        "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
-        apteka_base_url,
-        "https://www.apteka.md",
-        "https://cdn.jsdelivr.net",
-    ]
-    return {
-        "domain": "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
-        "csp": {
-            "connectDomains": [apteka_base_url],
-            "resourceDomains": resource_domains,
-        },
-    }
-
-
-WIDGET_UI_CONFIG: dict[str, Any] = _build_widget_ui_config()
-
-
-@dataclass(frozen=True, slots=True)
-class ToolDefinition:
-    """Metadata and callable for an MCP tool."""
-
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-    handler: Callable[[dict[str, Any]], dict[str, Any]]
-    output_template: str
-    ui: dict[str, Any]
-
-
-def _not_implemented_tool(tool_name: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
-    def _handler(arguments: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "status": "not_implemented",
-            "tool": tool_name,
-            "arguments": arguments,
-        }
-
-    return _handler
 
 
 def _search_products_handler(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -112,6 +76,7 @@ def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     price = arguments.get("price")
     discount_price = arguments.get("discount_price")
     manufacturer = arguments.get("manufacturer")
+    image_url = arguments.get("image_url")
     use_add_endpoint = bool(arguments.get("use_add_endpoint")) if isinstance(
         arguments.get("use_add_endpoint"), bool
     ) else False
@@ -129,6 +94,7 @@ def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
             else None
         ),
         manufacturer=str(manufacturer) if isinstance(manufacturer, str) else None,
+        image_url=str(image_url) if isinstance(image_url, str) else None,
     )
 
 
@@ -180,201 +146,27 @@ def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
-    """Create the default tool registry for MCP requests."""
-
-    return {
-        "search_products": ToolDefinition(
-            name="search_products",
-            description=(
-                "Search products by free-text query via Stage API. "
-                "Args: query and optional limit. "
-                "Returns structuredContent.products and structuredContent.no_results when empty."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1},
-                },
-                "required": ["query"],
-            },
-            handler=_search_products_handler,
-            output_template="ui://widget/products.html",
-            ui=WIDGET_UI_CONFIG,
-        ),
-        "add_to_my_cart": ToolDefinition(
-            name="add_to_my_cart",
-            description=(
-                "Manage cart with two modes. "
-                "Default mode uses /cart/update with full-state merge. "
-                "For single card add UI, pass use_add_endpoint=true with product_id to use /cart/add. "
-                "Batch update: pass items=[{product_id,quantity},...], "
-                "where quantity is absolute target and 0 removes item."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "product_id": {"type": "string"},
-                    "quantity": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Deprecated. For single product only; prefer items[].",
-                    },
-                    "name": {"type": "string"},
-                    "price": {"type": "number"},
-                    "discount_price": {"type": "number"},
-                    "manufacturer": {"type": "string"},
-                    "use_add_endpoint": {
-                        "type": "boolean",
-                        "description": "Optional UI-only flag for single-card add via /cart/add.",
-                    },
-                    "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "product_id": {"type": "string"},
-                                "quantity": {"type": "integer", "minimum": 0},
-                                "name": {"type": "string"},
-                                "price": {"type": "number"},
-                                "discount_price": {"type": "number"},
-                                "manufacturer": {"type": "string"},
-                            },
-                            "required": ["product_id", "quantity"],
-                        },
-                    },
-                    "cart_session_id": {"type": "string"},
-                },
-                "anyOf": [{"required": ["product_id"]}, {"required": ["items"]}],
-            },
-            handler=_add_to_my_cart_handler,
-            output_template="ui://widget/add-to-my-cart.html",
-            ui=WIDGET_UI_CONFIG,
-        ),
-        "checkout_order": ToolDefinition(
-            name="checkout_order",
-            description=(
-                "Start checkout flow from current cart. "
-                "If cart is empty, returns a friendly prompt to add products first. "
-                "If cart has items, returns first step with delivery method options."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "cart_session_id": {"type": "string"},
-                    "delivery_method": {"type": "string", "enum": ["pickup", "courier_delivery"]},
-                    "pickup_region_id": {"type": "integer", "minimum": 1},
-                    "pickup_region_name": {"type": "string"},
-                    "pickup_city_id": {"type": "integer", "minimum": 1},
-                    "pickup_city_name": {"type": "string"},
-                    "pickup_pharmacy_id": {"type": "integer", "minimum": 1},
-                    "pickup_pharmacy_name": {"type": "string"},
-                    "pickup_contact": {
-                        "type": "object",
-                        "properties": {
-                            "first_name": {"type": "string"},
-                            "last_name": {"type": "string"},
-                            "phone": {"type": "string"},
-                            "email": {"type": "string"},
-                        },
-                    },
-                    "courier_contact": {
-                        "type": "object",
-                        "properties": {
-                            "first_name": {"type": "string"},
-                            "last_name": {"type": "string"},
-                            "phone": {"type": "string"},
-                            "email": {"type": "string"},
-                        },
-                    },
-                    "courier_address": {
-                        "type": "object",
-                        "properties": {
-                            "region_id": {"type": "integer", "minimum": 1},
-                            "region_name": {"type": "string"},
-                            "city_id": {"type": "integer", "minimum": 1},
-                            "city_name": {"type": "string"},
-                            "street": {"type": "string"},
-                            "house_number": {"type": "string"},
-                            "apartment": {"type": "string"},
-                            "entrance": {"type": "string"},
-                            "floor": {"type": "string"},
-                            "intercom_code": {"type": "string"},
-                        },
-                    },
-                    "payment_method": {
-                        "type": "string",
-                        "enum": ["card_on_receipt", "cash_on_receipt", "bank_transfer"],
-                    },
-                    "dont_call_me": {"type": "boolean"},
-                    "terms_accepted": {"type": "boolean"},
-                    "comment": {"type": "string"},
-                },
-            },
-            handler=_checkout_order_handler,
-            output_template="ui://widget/checkout.html",
-            ui=WIDGET_UI_CONFIG,
-        ),
-        "support_knowledge_search": ToolDefinition(
-            name="support_knowledge_search",
-            description=(
-                "Semantic FAQ knowledge search for support questions: order placement, "
-                "work schedule, app capabilities, payment, delivery, and account usage."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1},
-                },
-                "required": ["query"],
-            },
-            handler=_support_knowledge_search_handler,
-            output_template="ui://widget/faq.html",
-            ui=WIDGET_UI_CONFIG,
-        ),
-        "my_cart": ToolDefinition(
-            name="my_cart",
-            description="Get current user cart state.",
-            input_schema={
-                "type": "object",
-                "properties": {"cart_session_id": {"type": "string"}},
-            },
-            handler=_my_cart_handler,
-            output_template="ui://widget/my-cart.html",
-            ui=WIDGET_UI_CONFIG,
-        ),
-        "set_widget_theme": ToolDefinition(
-            name="set_widget_theme",
-            description="Set storefront widget theme.",
-            input_schema={"type": "object"},
-            handler=_not_implemented_tool("set_widget_theme"),
-            output_template="ui://widget/theme.html",
-            ui=WIDGET_UI_CONFIG,
-        ),
-        "track_order_status_ui": ToolDefinition(
-            name="track_order_status_ui",
-            description=(
-                "Track order status by order number or phone. "
-                "For phone input, use full international format with country code first. "
-                "If the order was just created and user searches by order number, "
-                "tracking by number becomes available only after operator accepts the order, "
-                "so advise user to wait a bit and try again. "
-                "Use returned status_hint to explain context to user. "
-                "Do not treat packed as ready for pickup until client_notified."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "lookup": {"type": "string"},
-                },
-                "required": ["lookup"],
-            },
-            handler=_track_order_status_ui_handler,
-            output_template="ui://widget/tracking.html",
-            ui=WIDGET_UI_CONFIG,
-        ),
+    registry = _create_tool_registry_base()
+    handler_by_name: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+        "search_products": _search_products_handler,
+        "add_to_my_cart": _add_to_my_cart_handler,
+        "checkout_order": _checkout_order_handler,
+        "support_knowledge_search": _support_knowledge_search_handler,
+        "my_cart": _my_cart_handler,
+        "track_order_status_ui": _track_order_status_ui_handler,
     }
+    remapped: dict[str, ToolDefinition] = {}
+    for name, tool in registry.items():
+        handler = handler_by_name.get(name, tool.handler)
+        remapped[name] = ToolDefinition(
+            name=tool.name,
+            description=tool.description,
+            input_schema=tool.input_schema,
+            handler=handler,
+            output_template=tool.output_template,
+            ui=tool.ui,
+        )
+    return remapped
 
 
 @lru_cache(maxsize=1)
@@ -386,55 +178,8 @@ def _get_default_tool_registry() -> dict[str, ToolDefinition]:
 def _get_default_tools_list_payload() -> dict[str, Any]:
     registry = _get_default_tool_registry()
     return {
-        "tools": [_serialize_tool_definition(tool) for tool in registry.values()]
+        "tools": [serialize_tool_definition(tool) for tool in registry.values()]
     }
-
-
-def _serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
-    return {
-        "name": tool.name,
-        "description": tool.description,
-        "inputSchema": tool.input_schema,
-        "outputTemplate": tool.output_template,
-        "ui": tool.ui,
-        "_meta": {
-            "openai/outputTemplate": tool.output_template,
-            "openai/widgetAccessible": True,
-            "openai/widgetDomain": str(tool.ui.get("domain") or ""),
-            "openai/widgetCSP": tool.ui.get("csp") or {},
-        },
-    }
-
-
-def _decorate_tool_result(
-    tool_name: str, tool: ToolDefinition, result_payload: dict[str, Any]
-) -> dict[str, Any]:
-    payload = dict(result_payload)
-
-    if tool_name == "search_products":
-        products = payload.get("products")
-        if isinstance(products, list):
-            normalized_products = products
-        else:
-            normalized_products = []
-        payload["products"] = normalized_products
-        payload["no_results"] = len(normalized_products) == 0
-
-    payload["widget"] = {
-        "open": {
-            "template": tool.output_template,
-            "replace_previous": True,
-        },
-        "ui": tool.ui,
-    }
-    return payload
-
-
-def _normalize_cart_session_id(value: Any) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
 
 
 def _tool_uses_cart_session(tool_name: str) -> bool:
@@ -471,7 +216,7 @@ def _resolve_tool_arguments_with_cart_session_fallback(
     if not _tool_uses_cart_session(tool_name):
         return arguments
 
-    incoming_session_id = _normalize_cart_session_id(arguments.get("cart_session_id"))
+    incoming_session_id = normalize_cart_session_id(arguments.get("cart_session_id"))
     if incoming_session_id is not None:
         resolved_arguments = dict(arguments)
         resolved_arguments["cart_session_id"] = incoming_session_id
@@ -673,7 +418,7 @@ def handle_rpc_request(
         if registry is None:
             tools_result = _get_default_tools_list_payload()
         else:
-            tools_result = {"tools": [_serialize_tool_definition(tool) for tool in active_registry.values()]}
+            tools_result = {"tools": [serialize_tool_definition(tool) for tool in active_registry.values()]}
         return {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -709,7 +454,7 @@ def handle_rpc_request(
         if cache_ttl_seconds is not None and cache_key is not None:
             cached_payload = _get_cached_tool_payload(cache_key)
             if cached_payload is not None:
-                structured_payload = _decorate_tool_result(tool_name, tool, cached_payload)
+                structured_payload = decorate_tool_result(tool_name, tool, cached_payload)
                 _record_tool_result(
                     tool_name,
                     latency_ms=(_perf_counter() - started_at) * 1000.0,
@@ -728,7 +473,7 @@ def handle_rpc_request(
 
         try:
             result_payload = tool.handler(resolved_arguments)
-            structured_payload = _decorate_tool_result(tool_name, tool, result_payload)
+            structured_payload = decorate_tool_result(tool_name, tool, result_payload)
             if cache_ttl_seconds is not None and cache_key is not None:
                 _set_cached_tool_payload(
                     cache_key,

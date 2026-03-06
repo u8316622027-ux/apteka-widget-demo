@@ -898,6 +898,7 @@
           products: [],
           lastQuery: "",
           apiBaseUrl: "",
+          cartSyncQueue: Promise.resolve(),
         };
 
         const input = document.getElementById("products-search-input");
@@ -914,6 +915,13 @@
         const cartModalTotal = document.getElementById("products-cart-total");
 
         const normalizeText = (value) => String(value || "").trim();
+        const escapeHtml = (value) =>
+          String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
         const debugLog = () => {};
         const readStorageValue = (key) => {
           try {
@@ -1136,6 +1144,7 @@
             discount_price:
               typeof product?.discountPrice === "number" ? product.discountPrice : undefined,
             manufacturer: normalizeText(product?.manufacturer) || undefined,
+            image_url: normalizeText(product?.imageUrl) || undefined,
           };
           debugLog("call_add_to_my_cart_start", { productId, source: "subject_fallback" });
           if (typeof window.openai?.callTool !== "function") {
@@ -1171,6 +1180,7 @@
                 manufacturer: normalizeText(itemMeta?.manufacturer) || undefined,
                 price: typeof itemMeta?.price === "number" ? itemMeta.price : undefined,
                 discount_price: typeof itemMeta?.discountPrice === "number" ? itemMeta.discountPrice : undefined,
+                image_url: normalizeText(itemMeta?.imageUrl) || undefined,
               };
             })
             .filter(Boolean);
@@ -1259,11 +1269,59 @@
             return false;
           }
           try {
-            const toolResult = await window.openai.callTool("my_cart", {});
+            const storedSessionId = readStoredCartSessionId();
+            const toolResult = await window.openai.callTool("my_cart", {
+              cart_session_id: storedSessionId || undefined,
+            });
             return syncLocalCartFromToolPayload(toolResult);
           } catch (_error) {
             return false;
           }
+        };
+
+        const persistCartSessionFromToolPayload = (payload) => {
+          if (!payload || typeof payload !== "object") {
+            return false;
+          }
+          const candidates = [
+            payload,
+            payload.structuredContent,
+            payload.result,
+            payload.result?.structuredContent,
+            payload.data,
+            payload.payload,
+          ];
+          for (const candidate of candidates) {
+            if (!candidate || typeof candidate !== "object") {
+              continue;
+            }
+            const nextSessionId = normalizeText(
+              candidate.cart_session_id ||
+                candidate.cartSessionId ||
+                candidate.cart?.cart_session_id ||
+                candidate.cart?.cartSessionId,
+            );
+            if (!nextSessionId) {
+              continue;
+            }
+            writeStoredCartSessionId(nextSessionId);
+            return true;
+          }
+          return false;
+        };
+
+        const enqueueCartSync = (requestFactory) => {
+          const run = async () => {
+            try {
+              const result = await requestFactory();
+              persistCartSessionFromToolPayload(result);
+              return result;
+            } catch (error) {
+              throw error;
+            }
+          };
+          state.cartSyncQueue = state.cartSyncQueue.catch(() => null).then(run);
+          return state.cartSyncQueue;
         };
 
         const rememberCartItem = (productId) => {
@@ -1286,13 +1344,29 @@
           writeCartItems(payload);
         };
 
+        const wait = (delayMs) =>
+          new Promise((resolve) => {
+            window.setTimeout(resolve, delayMs);
+          });
+
+        const ensureCartBootstrapWithRetry = async () => {
+          for (let attempt = 0; attempt < 6; attempt += 1) {
+            const ok = await bootstrapCartFromBackend();
+            if (ok) {
+              return true;
+            }
+            await wait(180);
+          }
+          return false;
+        };
+
         const getPriceForCart = (item) => {
           const price = Number(item?.price);
           const discountPrice = Number(item?.discountPrice);
-          if (Number.isFinite(discountPrice) && discountPrice > 0 && Number.isFinite(price) && discountPrice < price) {
+          if (Number.isFinite(discountPrice)) {
             return discountPrice;
           }
-          if (Number.isFinite(price) && price > 0) {
+          if (Number.isFinite(price)) {
             return price;
           }
           return 0;
@@ -1487,36 +1561,60 @@
             .filter(Boolean);
 
           if (!rows.length) {
-            cartModalItems.innerHTML = '<p class="cart-modal-empty">В корзине пока нет товаров</p>';
+            const empty = document.createElement("p");
+            empty.className = "cart-modal-empty";
+            empty.textContent = "В корзине пока нет товаров";
+            cartModalItems.replaceChildren(empty);
             cartModalTotal.textContent = "Итого: 0.00 MDL";
             return;
           }
 
-          cartModalItems.innerHTML = rows
-            .map(
-              (row) => `
-                <article class="cart-modal-item" data-product-id="${row.productId}">
-                  <img
-                    class="cart-modal-item-image"
-                    src="${row.imageUrl}"
-                    alt="${row.name}"
-                    loading="lazy"
-                    onerror="this.onerror=null;this.src='${getFallbackImage()}'"
-                  />
-                  <div>
-                    <p class="cart-modal-item-name">${row.name}</p>
-                    <p class="cart-modal-item-meta">${row.manufacturer}</p>
-                    <p class="cart-modal-item-price">${toMoney(row.lineTotal)}</p>
-                  </div>
-                  <div class="cart-modal-qty">
-                    <button class="cart-modal-qty-button" data-action="cart-decrease">−</button>
-                    <span class="cart-modal-qty-value">${row.quantity}</span>
-                    <button class="cart-modal-qty-button" data-action="cart-increase">+</button>
-                  </div>
-                </article>
-              `,
-            )
-            .join("");
+          const fallbackImage = getFallbackImage();
+          const rowNodes = rows.map((row) => {
+            const article = document.createElement("article");
+            article.className = "cart-modal-item";
+            article.dataset.productId = row.productId;
+
+            const image = document.createElement("img");
+            image.className = "cart-modal-item-image";
+            image.src = row.imageUrl;
+            image.alt = row.name;
+            image.loading = "lazy";
+            image.addEventListener("error", () => {
+              image.src = fallbackImage;
+            });
+
+            const content = document.createElement("div");
+            const name = document.createElement("p");
+            name.className = "cart-modal-item-name";
+            name.textContent = row.name;
+            const manufacturer = document.createElement("p");
+            manufacturer.className = "cart-modal-item-meta";
+            manufacturer.textContent = row.manufacturer;
+            const price = document.createElement("p");
+            price.className = "cart-modal-item-price";
+            price.textContent = toMoney(row.lineTotal);
+            content.append(name, manufacturer, price);
+
+            const qty = document.createElement("div");
+            qty.className = "cart-modal-qty";
+            const decrease = document.createElement("button");
+            decrease.className = "cart-modal-qty-button";
+            decrease.dataset.action = "cart-decrease";
+            decrease.textContent = "−";
+            const value = document.createElement("span");
+            value.className = "cart-modal-qty-value";
+            value.textContent = String(row.quantity);
+            const increase = document.createElement("button");
+            increase.className = "cart-modal-qty-button";
+            increase.dataset.action = "cart-increase";
+            increase.textContent = "+";
+            qty.append(decrease, value, increase);
+
+            article.append(image, content, qty);
+            return article;
+          });
+          cartModalItems.replaceChildren(...rowNodes);
 
           const total = rows.reduce((sum, row) => sum + row.lineTotal, 0);
           cartModalTotal.textContent = `Итого: ${toMoney(total)}`;
@@ -1614,21 +1712,26 @@
                 ? `<p class="new-price">${toMoney(effectivePrice)}</p>`
                 : '<p class="new-price is-unavailable">Нет в наличии</p>';
               const actionButton = inStock
-                ? `<button class="add-to-cart-button" data-action="add-to-cart" data-product-id="${product.id}">В корзину</button>`
+                ? `<button class="add-to-cart-button" data-action="add-to-cart" data-product-id="${escapeHtml(product.id)}">В корзину</button>`
                 : '<button class="add-to-cart-button add-to-cart-button--ghost" disabled>Уточнить наличие</button>';
+              const safeImageUrl = escapeHtml(product.imageUrl);
+              const safeName = escapeHtml(product.name);
+              const safeManufacturer = escapeHtml(product.manufacturer);
+              const safeFallbackImage = escapeHtml(getFallbackImage());
+              const safeProductId = escapeHtml(product.id);
 
               return `
-                <article class="product-card ${inStock ? "" : "is-unavailable"}" data-product-id="${product.id}">
+                <article class="product-card ${inStock ? "" : "is-unavailable"}" data-product-id="${safeProductId}">
                   <img
                     class="product-image"
-                    src="${product.imageUrl}"
-                    alt="${product.name}"
+                    src="${safeImageUrl}"
+                    alt="${safeName}"
                     loading="lazy"
-                    onerror="this.onerror=null;this.src='${getFallbackImage()}'"
+                    onerror="this.onerror=null;this.src='${safeFallbackImage}'"
                   />
-                  <h3 class="product-title">${product.name}</h3>
+                  <h3 class="product-title">${safeName}</h3>
                   <div class="product-manufacturer-row">
-                    <p class="manufacturer">${product.manufacturer}</p>
+                    <p class="manufacturer">${safeManufacturer}</p>
                   </div>
                   <div class="product-price-row">${oldPriceLine}</div>
                   ${priceLine}
@@ -1845,17 +1948,12 @@
           if (cartModal && !cartModal.hidden) {
             renderCartModal();
           }
-          Promise.resolve(callAddToMyCart(product))
-            .then((result) => {
-              syncLocalCartFromToolPayload(result);
-            })
-            .catch((error) => {
-              debugLog("call_add_to_my_cart_error", {
-                message: String(error && error.message ? error.message : error),
-              });
-              console.error("products cart sync failed", error);
-              return null;
+          enqueueCartSync(() => callAddToMyCart(product)).catch((error) => {
+            debugLog("call_add_to_my_cart_error", {
+              message: String(error && error.message ? error.message : error),
             });
+            console.error("products cart sync failed", error);
+          });
         };
 
         const scrollTrack = (direction) => {
@@ -1985,15 +2083,11 @@
             writeLocalCart(payload);
             renderCartBadge();
             renderCartModal();
-            Promise.resolve(callSetCartItemQuantity())
-              .then((result) => {
-                syncLocalCartFromToolPayload(result);
-              })
-              .catch((error) => {
-                debugLog("call_add_to_my_cart_error", {
-                  message: String(error && error.message ? error.message : error),
-                });
+            enqueueCartSync(() => callSetCartItemQuantity()).catch((error) => {
+              debugLog("call_add_to_my_cart_error", {
+                message: String(error && error.message ? error.message : error),
               });
+            });
           });
         }
 
@@ -2012,7 +2106,7 @@
         setLoading(true);
         renderProducts();
 
-        Promise.resolve(bootstrapCartFromBackend())
+        Promise.resolve(ensureCartBootstrapWithRetry())
           .then(() => waitForInitialPayload())
           .then((didHydrateFromToolPayload) => {
             if (!didHydrateFromToolPayload) {

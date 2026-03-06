@@ -40,6 +40,7 @@
 - Apteka API:
   - `GET {APTEKA_BASE_URL}/api/v1/front/cart` (создание корзины + токен)
   - `GET {APTEKA_BASE_URL}/api/v1/front/cart` с `Authorization` (получение корзины)
+  - `POST {APTEKA_BASE_URL}/api/v1/front/cart/add` (single add для UI-карточек)
   - `POST {APTEKA_BASE_URL}/api/v1/front/cart/update` с `Authorization` и body `{"items":[{"product_id":"<product_id>","quantity":<target>}],"json":true}` (установка абсолютного количества; отправляется merged full-state)
 - Token store:
   - In-memory (по умолчанию)
@@ -55,6 +56,8 @@
 - Если Redis недоступен или пакет `redis` не установлен, используется in-memory store.
 - Если заданы переменные Upstash REST, они имеют приоритет над `REDIS_URL`.
 - Дефолтный token-store инициализируется один раз на процесс (singleton), чтобы `cart_session_id` сохранялся между вызовами tool.
+- При ошибке `POST /cart/add` fallback в `update` выполняется только для ожидаемых client-кодов (`409`, `422`); `5xx` и auth ошибки пробрасываются.
+- Upstash REST token store использует ограниченный retry для transient ошибок сети/`HTTP 5xx`.
 
 ## Test Cases
 - Unit:

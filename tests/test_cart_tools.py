@@ -6,7 +6,8 @@ import os
 import threading
 import time
 import unittest
-from urllib.error import HTTPError
+from decimal import Decimal
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from app.core.config import get_settings
@@ -529,6 +530,7 @@ class CartToolsTests(unittest.TestCase):
                 "price": 31.17,
                 "discount_price": 29.99,
                 "manufacturer": "Bayer",
+                "image_url": "https://cdn.example.com/aspirin.png",
             },
         )
 
@@ -539,7 +541,7 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(requests[0]["method"], "POST")
         self.assertEqual(
             requests[0]["body"],
-            '{"product_id":"17405","quantity":5,"json":true,"name":"Aspirin Cardio","manufacturer":"Bayer","price":31.17,"discount_price":29.99}',
+            '{"product_id":"17405","quantity":5,"json":true,"name":"Aspirin Cardio","manufacturer":"Bayer","price":31.17,"discount_price":29.99,"image_url":"https://cdn.example.com/aspirin.png"}',
         )
         self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer tok-1")
         self.assertEqual(
@@ -677,15 +679,26 @@ class CartToolsTests(unittest.TestCase):
             return FakeResponse(
                 (
                     '{"data":{"items":['
-                    '{"product_id":"16174","quantity":2},'
-                    '{"product_id":"17405","quantity":1}'
+                    '{"product_id":"16174","quantity":2,"name":"Ибупрофен","price":10.0,"discount_price":9.5,"manufacturer":"Bayer","image_url":"https://cdn.example.com/ibuprofen.png"},'
+                    '{"product_id":"17405","quantity":1,"name":"Нурофен","price":12.0,"discount_price":11.0,"manufacturer":"Reckitt","image_url":"https://cdn.example.com/nurofen.png"}'
                     '],"count":2}}'
                 ).encode("utf-8")
             )
 
         repository = AptekaCartRepository(urlopen=fake_urlopen)
         token = CartToken(access_token="tok-1", token_type="Bearer")
-        repository.add_item(token, product_id="17405", quantity=1)
+        repository.add_item(
+            token,
+            product_id="17405",
+            quantity=1,
+            item_meta={
+                "name": "Нурофен",
+                "price": 12.0,
+                "discount_price": 11.0,
+                "manufacturer": "Reckitt",
+                "image_url": "https://cdn.example.com/nurofen.png",
+            },
+        )
 
         self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart/add")
         self.assertEqual(requests[1]["url"], "https://stage.apteka.md/api/v1/front/cart")
@@ -694,11 +707,42 @@ class CartToolsTests(unittest.TestCase):
             requests[2]["body"],
             (
                 '{"items":['
-                '{"product_id":"16174","quantity":2},'
-                '{"product_id":"17405","quantity":2}'
+                '{"product_id":"16174","quantity":2,"name":"Ибупрофен","manufacturer":"Bayer","price":10.0,"discount_price":9.5,"image_url":"https://cdn.example.com/ibuprofen.png"},'
+                '{"product_id":"17405","quantity":2,"name":"Нурофен","manufacturer":"Reckitt","price":12.0,"discount_price":11.0,"image_url":"https://cdn.example.com/nurofen.png"}'
                 '],"json":true}'
             ),
         )
+
+    def test_apteka_repository_add_item_does_not_fallback_on_server_error(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[str] = []
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            requests.append(request.full_url)
+            if request.full_url.endswith("/add"):
+                raise HTTPError(request.full_url, 500, "Server Error", hdrs=None, fp=None)
+            return FakeResponse(b"{}")
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        token = CartToken(access_token="tok-1", token_type="Bearer")
+
+        with self.assertRaises(HTTPError):
+            repository.add_item(token, product_id="17405", quantity=1)
+
+        self.assertEqual(requests, ["https://stage.apteka.md/api/v1/front/cart/add"])
 
     def test_apteka_repository_maps_item_meta_from_cart_response(self) -> None:
         class FakeResponse:
@@ -718,7 +762,7 @@ class CartToolsTests(unittest.TestCase):
             del timeout
             del request
             return FakeResponse(
-                b'{"data":{"items":[{"product_id":"17405","quantity":1,"name":"Aspirin Cardio","price":31.17,"discount_price":29.99,"manufacturer":"Bayer"}],"count":1}}'
+                b'{"data":{"items":[{"product_id":"17405","quantity":1,"name":"Aspirin Cardio","price":31.17,"discount_price":29.99,"manufacturer":"Bayer","image_url":"https://cdn.example.com/aspirin.png"}],"count":1}}'
             )
 
         repository = AptekaCartRepository(urlopen=fake_urlopen)
@@ -728,9 +772,103 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(snapshot.items[0].product_id, "17405")
         self.assertEqual(snapshot.items[0].quantity, 1)
         self.assertEqual(snapshot.items[0].name, "Aspirin Cardio")
-        self.assertEqual(snapshot.items[0].price, 31.17)
-        self.assertEqual(snapshot.items[0].discount_price, 29.99)
+        self.assertEqual(snapshot.items[0].price, Decimal("31.17"))
+        self.assertEqual(snapshot.items[0].discount_price, Decimal("29.99"))
         self.assertEqual(snapshot.items[0].manufacturer, "Bayer")
+        self.assertEqual(snapshot.items[0].image_url, "https://cdn.example.com/aspirin.png")
+        self.assertEqual(snapshot.total, Decimal("29.99"))
+
+    def test_apteka_repository_maps_prices_to_decimal(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            del request
+            return FakeResponse(
+                b'{"data":{"items":[{"product_id":"17405","quantity":1,"price":31.17,"discount_price":29.99}],"count":1}}'
+            )
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        snapshot = repository.get_cart(CartToken(access_token="tok-1", token_type="Bearer"))
+
+        self.assertIsInstance(snapshot.items[0].price, Decimal)
+        self.assertIsInstance(snapshot.items[0].discount_price, Decimal)
+        self.assertIsInstance(snapshot.total, Decimal)
+
+    def test_apteka_repository_computes_total_from_items_when_missing(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            del request
+            return FakeResponse(
+                (
+                    '{"data":{"items":['
+                    '{"product_id":"17405","quantity":2,"price":31.17,"discount_price":29.99},'
+                    '{"product_id":"20750","quantity":1,"price":12.0}'
+                    '],"count":2}}'
+                ).encode("utf-8")
+            )
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        snapshot = repository.get_cart(CartToken(access_token="tok-1", token_type="Bearer"))
+
+        self.assertEqual(snapshot.count, 2)
+        self.assertEqual(snapshot.total, Decimal("71.98"))
+
+    def test_apteka_repository_filters_unsafe_image_urls(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            del request
+            return FakeResponse(
+                (
+                    '{"data":{"items":['
+                    '{"product_id":"17405","quantity":1,"image_url":"javascript:alert(1)"},'
+                    '{"product_id":"20750","quantity":1,"image_url":"https://cdn.example.com/nurofen.png"}'
+                    '],"count":2}}'
+                ).encode("utf-8")
+            )
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        snapshot = repository.get_cart(CartToken(access_token="tok-1", token_type="Bearer"))
+
+        self.assertEqual(snapshot.items[0].image_url, None)
+        self.assertEqual(snapshot.items[1].image_url, "https://cdn.example.com/nurofen.png")
 
     def test_apteka_repository_update_items_calls_update_endpoint(self) -> None:
         class FakeResponse:
@@ -903,6 +1041,45 @@ class CartToolsTests(unittest.TestCase):
         assert restored is not None
         self.assertEqual(restored.access_token, "token-99")
         self.assertEqual(restored.token_type, "Bearer")
+
+    def test_upstash_rest_store_retries_get_on_transient_network_error(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        calls = {"count": 0}
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            del request
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise URLError("temporary dns issue")
+            return FakeResponse(
+                b'{"result":"{\\"access_token\\":\\"token-77\\",\\"token_type\\":\\"Bearer\\"}"}'
+            )
+
+        store = UpstashRestCartTokenStore(
+            base_url="https://example.upstash.io",
+            token="secret",
+            ttl_seconds=123,
+            urlopen=fake_urlopen,
+        )
+        restored = store.get_token("sess-1")
+
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertEqual(restored.access_token, "token-77")
+        self.assertEqual(calls["count"], 2)
 
     def test_default_token_store_uses_upstash_env(self) -> None:
         _clear_default_token_store()
