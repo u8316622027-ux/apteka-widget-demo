@@ -110,9 +110,14 @@ class ProductSearchTests(unittest.TestCase):
             ).encode("utf-8")
             return FakeResponse(payload)
 
-        repository = AptekaSearchRepository(urlopen=fake_urlopen)
-
-        response = search_products("nurofen", repository=repository, limit=1)
+        with patch.dict("os.environ", {}, clear=True):
+            with patch(
+                "app.interfaces.mcp.tools.apteka_urls.read_env_file_value",
+                return_value="",
+                create=True,
+            ):
+                repository = AptekaSearchRepository(urlopen=fake_urlopen)
+                response = search_products("nurofen", repository=repository, limit=1)
 
         self.assertTrue(requests)
         self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/search")
@@ -199,3 +204,35 @@ class ProductSearchTests(unittest.TestCase):
             repository.search("nurofen")
 
         self.assertEqual(requests, ["https://prod.apteka.md/api/v1/front/search"])
+
+    def test_search_repository_uses_dotenv_fallback_when_env_is_missing(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[str] = []
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            requests.append(request.full_url)
+            return FakeResponse(b'{"items":[]}')
+
+        with patch.dict("os.environ", {}, clear=True):
+            with patch(
+                "app.interfaces.mcp.tools.apteka_urls.read_env_file_value",
+                return_value="https://api.apteka.md",
+                create=True,
+            ):
+                repository = AptekaSearchRepository(urlopen=fake_urlopen)
+                repository.search("nurofen")
+
+        self.assertEqual(requests, ["https://api.apteka.md/api/v1/front/search"])

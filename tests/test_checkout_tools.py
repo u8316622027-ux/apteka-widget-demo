@@ -121,6 +121,15 @@ class FakeCheckoutReferenceRepository:
 
 
 class CheckoutToolsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._base_url_patcher = patch.dict(
+            os.environ,
+            {"APTEKA_BASE_URL": "https://stage.apteka.md"},
+            clear=False,
+        )
+        self._base_url_patcher.start()
+        self.addCleanup(self._base_url_patcher.stop)
+
     def tearDown(self) -> None:
         _clear_checkout_reference_cache()
 

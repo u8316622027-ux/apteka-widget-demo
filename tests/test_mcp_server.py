@@ -444,6 +444,7 @@ class MCPServerTests(unittest.TestCase):
             ],
         )
 
+
     def test_tools_call_requires_string_name(self) -> None:
         registry = create_tool_registry()
 
@@ -977,15 +978,16 @@ class MCPHttpTransportRequestIdTests(unittest.TestCase):
         self.assertTrue(len(headers["x-request-id"]) >= 8)
 
     def test_http_response_uses_gzip_for_large_payload_when_accepted(self) -> None:
-        status, headers, raw_body = self._post_mcp(
-            {
-                "jsonrpc": "2.0",
-                "id": 3,
-                "method": "tools/call",
-                "params": {"name": "search_products", "arguments": {"query": "q"}},
-            },
-            headers={"Accept-Encoding": "gzip"},
-        )
+        with patch("app.interfaces.mcp.server.MIN_GZIP_BYTES", 1):
+            status, headers, raw_body = self._post_mcp(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "search_products", "arguments": {"query": "q"}},
+                },
+                headers={"Accept-Encoding": "gzip"},
+            )
         self.assertEqual(status, 200)
         self.assertEqual(headers.get("content-encoding"), "gzip")
         decoded = gzip.decompress(raw_body).decode("utf-8")
