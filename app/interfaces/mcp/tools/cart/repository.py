@@ -90,7 +90,7 @@ class AptekaCartRepository(CartApiRepository):
             with self._urlopen(request, timeout=self._timeout):
                 return self.get_cart(token)
         except HTTPError as exc:
-            if int(getattr(exc, "code", 0)) not in {409, 422}:
+            if int(getattr(exc, "code", 0)) not in {400, 404, 405, 409, 422}:
                 raise
             current = self.get_cart(token)
             merged_items: list[tuple[str, int]] = []
