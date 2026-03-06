@@ -6,11 +6,14 @@ import http.client
 import gzip
 import hashlib
 import json
+import os
 import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from app.interfaces.mcp.tools.apteka_urls import get_apteka_base_url
+from app.core.config import get_settings
 from app.interfaces.mcp.server import (
     _build_access_log_message,
     _is_json_content_type,
@@ -29,6 +32,7 @@ from app.interfaces.mcp.server import (
 
 class MCPServerTests(unittest.TestCase):
     def tearDown(self) -> None:
+        get_settings.cache_clear()
         _reset_server_caches_for_tests()
         _reset_runtime_metrics_for_tests()
 
@@ -152,11 +156,10 @@ class MCPServerTests(unittest.TestCase):
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
             tool_payload["ui"]["csp"]["resourceDomains"],
         )
-        self.assertIn("https://stage.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
-        self.assertIn("https://stage.apteka.md", tool_payload["ui"]["csp"]["connectDomains"])
+        self.assertIn(get_apteka_base_url(), tool_payload["ui"]["csp"]["resourceDomains"])
+        self.assertIn(get_apteka_base_url(), tool_payload["ui"]["csp"]["connectDomains"])
         self.assertIn("https://www.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("https://cdn.jsdelivr.net", tool_payload["ui"]["csp"]["resourceDomains"])
-        self.assertIn("https://api.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("_meta", tool_payload)
         self.assertEqual(
             tool_payload["_meta"]["openai/outputTemplate"],
@@ -166,6 +169,27 @@ class MCPServerTests(unittest.TestCase):
             tool_payload["_meta"]["openai/widgetDomain"],
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
         )
+
+    def test_tools_list_uses_widget_domain_from_env(self) -> None:
+        _reset_server_caches_for_tests()
+        get_settings.cache_clear()
+        with patch.dict(
+            os.environ,
+            {"MCP_WIDGET_DOMAIN": "https://widgets.example.com"},
+            clear=False,
+        ):
+            registry = create_tool_registry()
+            response = handle_rpc_request(
+                {"jsonrpc": "2.0", "id": 20, "method": "tools/list", "params": {}},
+                registry=registry,
+            )
+
+        tool_payload = next(
+            tool for tool in response["result"]["tools"] if tool["name"] == "search_products"
+        )
+        self.assertEqual(tool_payload["ui"]["domain"], "https://widgets.example.com")
+        self.assertIn("https://widgets.example.com", tool_payload["ui"]["csp"]["resourceDomains"])
+        self.assertEqual(tool_payload["_meta"]["openai/widgetDomain"], "https://widgets.example.com")
 
     def test_default_registry_is_cached_between_requests(self) -> None:
         _reset_server_caches_for_tests()
@@ -441,15 +465,14 @@ class MCPServerTests(unittest.TestCase):
             contents[0]["_meta"]["openai/widgetCSP"]["resource_domains"],
             [
                 "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
-                "https://stage.apteka.md",
+                get_apteka_base_url(),
                 "https://www.apteka.md",
                 "https://cdn.jsdelivr.net",
-                "https://api.apteka.md",
             ],
         )
         self.assertEqual(
             contents[0]["_meta"]["openai/widgetCSP"]["connect_domains"],
-            ["https://stage.apteka.md"],
+            [get_apteka_base_url()],
         )
 
 
@@ -851,10 +874,12 @@ class MCPServerTests(unittest.TestCase):
             quantity=2,
             items=None,
             cart_session_id="sess-1",
+            use_add_endpoint=False,
             name="Aspirin Cardio",
             price=31.17,
             discount_price=29.99,
             manufacturer="Bayer",
+            image_url=None,
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
@@ -893,13 +918,57 @@ class MCPServerTests(unittest.TestCase):
             quantity=None,
             items=[{"product_id": "20859", "quantity": 1}],
             cart_session_id="sess-1",
+            use_add_endpoint=False,
             name=None,
             price=None,
             discount_price=None,
             manufacturer=None,
+            image_url=None,
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 2)
+
+    def test_tools_call_add_to_my_cart_passes_use_add_endpoint_flag(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.add_to_my_cart",
+            return_value={
+                "cart_session_id": "sess-1",
+                "count": 1,
+                "items": [{"product_id": "A12", "quantity": 1}],
+            },
+        ) as mocked_add_to_cart:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 81,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "add_to_my_cart",
+                        "arguments": {
+                            "cart_session_id": "sess-1",
+                            "product_id": "A12",
+                            "use_add_endpoint": True,
+                        },
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_add_to_cart.assert_called_once_with(
+            product_id="A12",
+            quantity=None,
+            items=None,
+            cart_session_id="sess-1",
+            use_add_endpoint=True,
+            name=None,
+            price=None,
+            discount_price=None,
+            manufacturer=None,
+            image_url=None,
+        )
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["count"], 1)
 
     def test_tools_call_my_cart_uses_subject_fallback_when_arguments_empty(self) -> None:
         registry = create_tool_registry()
@@ -968,10 +1037,12 @@ class MCPServerTests(unittest.TestCase):
             quantity=None,
             items=None,
             cart_session_id=expected_session_id,
+            use_add_endpoint=False,
             name=None,
             price=None,
             discount_price=None,
             manufacturer=None,
+            image_url=None,
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
@@ -1007,6 +1078,31 @@ class MCPServerTests(unittest.TestCase):
         mocked_my_cart.assert_called_once_with(cart_session_id="6a6094887f254e18801aef64fa342348")
         self.assertFalse(my_cart_response["result"]["isError"])
         self.assertEqual(my_cart_response["result"]["structuredContent"]["count"], 0)
+
+    def test_tools_call_my_cart_uses_shared_session_normalizer(self) -> None:
+        registry = create_tool_registry()
+        with patch(
+            "app.interfaces.mcp.server.normalize_cart_session_id",
+            wraps=lambda value: str(value).strip() or None,
+        ) as mocked_normalize:
+            with patch(
+                "app.interfaces.mcp.server.my_cart",
+                return_value={"cart_session_id": "session-123", "count": 0, "items": []},
+            ):
+                handle_rpc_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 813,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "my_cart",
+                            "arguments": {"cart_session_id": "  session-123  "},
+                        },
+                    },
+                    registry=registry,
+                )
+
+        mocked_normalize.assert_called()
 
     def test_tools_call_checkout_order_delegates_to_checkout_tool(self) -> None:
         registry = create_tool_registry()

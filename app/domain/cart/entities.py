@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,9 +21,10 @@ class CartItem:
     product_id: str
     quantity: int
     name: str | None = None
-    price: float | None = None
-    discount_price: float | None = None
+    price: Decimal | None = None
+    discount_price: Decimal | None = None
     manufacturer: str | None = None
+    image_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,4 +33,4 @@ class CartSnapshot:
 
     items: list[CartItem]
     count: int
-    total: float | None
+    total: Decimal | None

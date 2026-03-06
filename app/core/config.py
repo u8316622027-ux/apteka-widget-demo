@@ -57,6 +57,7 @@ if BaseSettings is not None:
         mcp_tracking_cache_ttl_seconds: float = Field(default=10.0, gt=0)
         mcp_checkout_reference_cache_ttl_seconds: float = Field(default=300.0, gt=0)
         mcp_tool_cache_max_entries: int = Field(default=256, gt=0)
+        mcp_widget_domain: str = "https://subgerminal-yevette-lactogenic.ngrok-free.dev"
 
 else:
 
@@ -72,6 +73,7 @@ else:
         mcp_tracking_cache_ttl_seconds: float = 10.0
         mcp_checkout_reference_cache_ttl_seconds: float = 300.0
         mcp_tool_cache_max_entries: int = 256
+        mcp_widget_domain: str = "https://subgerminal-yevette-lactogenic.ngrok-free.dev"
 
         def __init__(self, _env_file: str | Path | None = None) -> None:
             env_path = Path(_env_file) if _env_file else Path(".env")
@@ -118,6 +120,17 @@ else:
                 self,
                 "mcp_tool_cache_max_entries",
                 _to_int(merged.get("MCP_TOOL_CACHE_MAX_ENTRIES"), 256),
+            )
+            object.__setattr__(
+                self,
+                "mcp_widget_domain",
+                str(
+                    merged.get(
+                        "MCP_WIDGET_DOMAIN",
+                        "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+                    )
+                ).strip()
+                or "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
             )
 
 

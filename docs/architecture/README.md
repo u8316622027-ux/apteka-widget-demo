@@ -16,6 +16,10 @@
   - централизованные runtime-настройки (env + `.env`)
 - `app/interfaces/mcp/tools/*`:
   - MCP tools и адаптеры к внешним API
+- `app/interfaces/mcp/tools/cart/*`:
+  - cart-адаптеры, token stores и payload мапперы (`repository.py`, `token_store.py`, `mappers.py`)
+- `app/interfaces/mcp/tool_registry.py`:
+  - централизованный реестр MCP tools, схемы и widget metadata
 - `app/interfaces/mcp/server.py`:
   - HTTP JSON-RPC транспорт на `http.server`
 - `app/interfaces/mcp/fastapi_server.py`:
@@ -74,6 +78,7 @@
   - `MCP_SEARCH_CACHE_TTL_SECONDS`
   - `MCP_TRACKING_CACHE_TTL_SECONDS`
   - `MCP_TOOL_CACHE_MAX_ENTRIES`
+  - `MCP_WIDGET_DOMAIN`
 
 ## Внешние API
 - Базовый URL для Apteka API задается через env (`APTEKA_BASE_URL`) и используется всеми tool-адаптерами.
