@@ -56,7 +56,7 @@
 - Если Redis недоступен или пакет `redis` не установлен, используется in-memory store.
 - Если заданы переменные Upstash REST, они имеют приоритет над `REDIS_URL`.
 - Дефолтный token-store инициализируется один раз на процесс (singleton), чтобы `cart_session_id` сохранялся между вызовами tool.
-- При ошибке `POST /cart/add` fallback в `update` выполняется только для ожидаемых client-кодов (`409`, `422`); `5xx` и auth ошибки пробрасываются.
+- При ошибке `POST /cart/add` fallback в `update` выполняется для всех кодов, кроме auth-ошибок (`401`, `403`), чтобы UI-добавление не ломалось на нестабильных ответах `/add`.
 - Upstash REST token store использует ограниченный retry для transient ошибок сети/`HTTP 5xx`.
 
 ## Test Cases

@@ -755,7 +755,7 @@ class CartToolsTests(unittest.TestCase):
             ),
         )
 
-    def test_apteka_repository_add_item_does_not_fallback_on_server_error(self) -> None:
+    def test_apteka_repository_add_item_falls_back_to_update_on_server_error(self) -> None:
         class FakeResponse:
             def __init__(self, payload: bytes) -> None:
                 self._payload = payload
@@ -769,22 +769,33 @@ class CartToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc_val, exc_tb) -> None:
                 return None
 
-        requests: list[str] = []
+        requests: list[dict[str, object]] = []
 
         def fake_urlopen(request, timeout: float):
-            del timeout
-            requests.append(request.full_url)
+            body = request.data.decode("utf-8") if request.data else ""
+            requests.append(
+                {
+                    "url": request.full_url,
+                    "method": request.get_method(),
+                    "body": body,
+                    "timeout": timeout,
+                }
+            )
             if request.full_url.endswith("/add"):
                 raise HTTPError(request.full_url, 500, "Server Error", hdrs=None, fp=None)
-            return FakeResponse(b"{}")
+            if request.full_url.endswith("/update"):
+                return FakeResponse(b"{}")
+            return FakeResponse(
+                b'{"data":{"items":[{"product_id":"17405","quantity":1}],"count":1}}'
+            )
 
         repository = AptekaCartRepository(urlopen=fake_urlopen)
         token = CartToken(access_token="tok-1", token_type="Bearer")
+        repository.add_item(token, product_id="17405", quantity=1)
 
-        with self.assertRaises(HTTPError):
-            repository.add_item(token, product_id="17405", quantity=1)
-
-        self.assertEqual(requests, ["https://stage.apteka.md/api/v1/front/cart/add"])
+        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart/add")
+        self.assertEqual(requests[1]["url"], "https://stage.apteka.md/api/v1/front/cart")
+        self.assertEqual(requests[2]["url"], "https://stage.apteka.md/api/v1/front/cart/update")
 
     def test_apteka_repository_maps_item_meta_from_cart_response(self) -> None:
         class FakeResponse:
