@@ -899,6 +899,7 @@
           lastQuery: "",
           apiBaseUrl: "",
           cartSyncQueue: Promise.resolve(),
+          cartBootstrapCompleted: false,
         };
 
         const input = document.getElementById("products-search-input");
@@ -1353,11 +1354,48 @@
           for (let attempt = 0; attempt < 6; attempt += 1) {
             const ok = await bootstrapCartFromBackend();
             if (ok) {
+              state.cartBootstrapCompleted = true;
               return true;
             }
             await wait(180);
           }
           return false;
+        };
+
+        const scheduleDeferredCartBootstrap = () => {
+          const startedAt = Date.now();
+          const maxDurationMs = 18000;
+          const attemptEveryMs = 1200;
+
+          const run = () => {
+            if (state.cartBootstrapCompleted) {
+              return;
+            }
+            if (root.getAttribute("aria-hidden") === "true") {
+              return;
+            }
+            if (Date.now() - startedAt > maxDurationMs) {
+              return;
+            }
+            Promise.resolve(ensureCartBootstrapWithRetry())
+              .then((ok) => {
+                if (ok) {
+                  return;
+                }
+                window.setTimeout(() => {
+                  run();
+                }, attemptEveryMs);
+              })
+              .catch(() => {
+                window.setTimeout(() => {
+                  run();
+                }, attemptEveryMs);
+              });
+          };
+
+          window.setTimeout(() => {
+            run();
+          }, attemptEveryMs);
         };
 
         const getPriceForCart = (item) => {
@@ -2105,6 +2143,7 @@
         renderCartBadge();
         setLoading(true);
         renderProducts();
+        scheduleDeferredCartBootstrap();
 
         Promise.resolve(ensureCartBootstrapWithRetry())
           .then(() => waitForInitialPayload())
