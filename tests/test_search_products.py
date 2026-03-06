@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from app.domain.products.entities import ProductSummary
 from app.domain.products.service import ProductSearchService
@@ -236,3 +237,16 @@ class ProductSearchTests(unittest.TestCase):
                 repository.search("nurofen")
 
         self.assertEqual(requests, ["https://api.apteka.md/api/v1/front/search"])
+
+    def test_search_products_returns_empty_payload_when_upstream_returns_http_500(self) -> None:
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            raise HTTPError(request.full_url, 500, "Internal Server Error", hdrs=None, fp=None)
+
+        repository = AptekaSearchRepository(urlopen=fake_urlopen)
+        response = search_products("aspirin", repository=repository)
+
+        self.assertEqual(response["query"], "aspirin")
+        self.assertEqual(response["count"], 0)
+        self.assertEqual(response["products"], [])
+        self.assertEqual(response["upstream_error"], {"status_code": 500, "retryable": True})

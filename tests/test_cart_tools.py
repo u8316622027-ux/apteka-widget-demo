@@ -6,6 +6,7 @@ import os
 import threading
 import time
 import unittest
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 from app.core.config import get_settings
@@ -38,7 +39,11 @@ class FakeCartRepository:
         for _, product_id, quantity in self.add_calls:
             quantities[product_id] = quantities.get(product_id, 0) + quantity
         for _, updates in self.update_calls:
-            quantities = {product_id: quantity for product_id, quantity in updates}
+            for product_id, quantity in updates:
+                if quantity <= 0:
+                    quantities.pop(product_id, None)
+                else:
+                    quantities[product_id] = quantity
 
         items = [
             CartItem(product_id=product_id, quantity=quantity)
@@ -47,11 +52,26 @@ class FakeCartRepository:
         ]
         return CartSnapshot(items=items, count=len(items), total=float(sum(quantities.values())))
 
-    def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
+    def add_item(
+        self,
+        token: CartToken,
+        *,
+        product_id: str,
+        quantity: int,
+        item_meta: dict[str, object] | None = None,
+    ) -> CartSnapshot:
+        del item_meta
         self.add_calls.append((token.access_token, product_id, quantity))
         return self.get_cart(token)
 
-    def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
+    def update_items(
+        self,
+        token: CartToken,
+        *,
+        items: list[tuple[str, int]],
+        item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
+    ) -> CartSnapshot:
+        del item_meta_by_product_id
         self.update_calls.append((token.access_token, items))
         return self.get_cart(token)
 
@@ -94,6 +114,28 @@ class CartToolsTests(unittest.TestCase):
         )
 
         self.assertEqual(second["cart_session_id"], first["cart_session_id"])
+        self.assertFalse(second["cart_created"])
+        self.assertEqual(len(repository.created_tokens), 1)
+
+    def test_my_cart_keeps_explicit_session_id_when_token_is_created(self) -> None:
+        repository = FakeCartRepository()
+        token_store = InMemoryCartTokenStore()
+        explicit_session_id = "88cd64b0df112278d7e5c1a3967e4cb6258e2928ecaf8782ac47bfba0d31fd0e"
+
+        first = my_cart(
+            cart_session_id=explicit_session_id,
+            repository=repository,
+            token_store=token_store,
+        )
+        second = my_cart(
+            cart_session_id=explicit_session_id,
+            repository=repository,
+            token_store=token_store,
+        )
+
+        self.assertEqual(first["cart_session_id"], explicit_session_id)
+        self.assertTrue(first["cart_created"])
+        self.assertEqual(second["cart_session_id"], explicit_session_id)
         self.assertFalse(second["cart_created"])
         self.assertEqual(len(repository.created_tokens), 1)
 
@@ -151,9 +193,9 @@ class CartToolsTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["items"], [])
-        self.assertEqual(repository.update_calls[-1], ("token-1", []))
+        self.assertEqual(repository.update_calls[-1], ("token-1", [("17405", 0)]))
 
-    def test_add_to_my_cart_updates_items_list_with_merge(self) -> None:
+    def test_add_to_my_cart_updates_only_changed_items(self) -> None:
         repository = FakeCartRepository()
         token_store = InMemoryCartTokenStore()
         session = my_cart(repository=repository, token_store=token_store)
@@ -174,7 +216,87 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(payload["count"], 2)
         self.assertEqual(
             repository.update_calls[-1],
-            ("token-1", [("16174", 1), ("20859", 1)]),
+            ("token-1", [("20859", 1)]),
+        )
+
+    def test_add_to_my_cart_sends_meta_only_for_changed_items(self) -> None:
+        class MetadataRepository:
+            def __init__(self) -> None:
+                self.last_item_meta_by_product_id: dict[str, dict[str, object]] | None = None
+
+            def create_cart(self) -> CartToken:
+                return CartToken(access_token="token-1", token_type="Bearer")
+
+            def get_cart(self, token: CartToken) -> CartSnapshot:
+                del token
+                return CartSnapshot(
+                    items=[
+                        CartItem(
+                            product_id="16174",
+                            quantity=1,
+                            name="Ибупрофен",
+                            price=10.0,
+                            discount_price=9.5,
+                            manufacturer="Bayer",
+                        )
+                    ],
+                    count=1,
+                    total=10.0,
+                )
+
+            def add_item(
+                self,
+                token: CartToken,
+                *,
+                product_id: str,
+                quantity: int,
+                item_meta: dict[str, object] | None = None,
+            ) -> CartSnapshot:
+                del token, product_id, quantity, item_meta
+                raise AssertionError("add_item should not be used in this scenario")
+
+            def update_items(
+                self,
+                token: CartToken,
+                *,
+                items: list[tuple[str, int]],
+                item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
+            ) -> CartSnapshot:
+                del token, items
+                self.last_item_meta_by_product_id = item_meta_by_product_id
+                return CartSnapshot(items=[], count=0, total=None)
+
+        repository = MetadataRepository()
+        token_store = InMemoryCartTokenStore()
+        session = my_cart(repository=repository, token_store=token_store)
+
+        add_to_my_cart(
+            items=[
+                {
+                    "product_id": "20750",
+                    "quantity": 1,
+                    "name": "Нурофен",
+                    "price": 12.0,
+                    "discount_price": 11.0,
+                    "manufacturer": "Reckitt",
+                }
+            ],
+            cart_session_id=str(session["cart_session_id"]),
+            repository=repository,
+            token_store=token_store,
+        )
+
+        self.assertIsNotNone(repository.last_item_meta_by_product_id)
+        assert repository.last_item_meta_by_product_id is not None
+        self.assertNotIn("16174", repository.last_item_meta_by_product_id)
+        self.assertEqual(
+            repository.last_item_meta_by_product_id["20750"],
+            {
+                "name": "Нурофен",
+                "manufacturer": "Reckitt",
+                "price": 12.0,
+                "discount_price": 11.0,
+            },
         )
 
     def test_add_to_my_cart_collapses_duplicate_items_to_last_value(self) -> None:
@@ -218,12 +340,27 @@ class CartToolsTests(unittest.TestCase):
                     ]
                 return CartSnapshot(items=items, count=len(items), total=float(len(items)))
 
-            def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
+            def add_item(
+                self,
+                token: CartToken,
+                *,
+                product_id: str,
+                quantity: int,
+                item_meta: dict[str, object] | None = None,
+            ) -> CartSnapshot:
+                del item_meta
                 with self._lock:
                     self.state[product_id] = self.state.get(product_id, 0) + quantity
                 return self.get_cart(token)
 
-            def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
+            def update_items(
+                self,
+                token: CartToken,
+                *,
+                items: list[tuple[str, int]],
+                item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
+            ) -> CartSnapshot:
+                del item_meta_by_product_id
                 with self._lock:
                     self.concurrent += 1
                     if self.concurrent > self.max_concurrent:
@@ -231,7 +368,11 @@ class CartToolsTests(unittest.TestCase):
                 try:
                     time.sleep(0.03)
                     with self._lock:
-                        self.state = {product_id: quantity for product_id, quantity in items}
+                        for product_id, quantity in items:
+                            if quantity <= 0:
+                                self.state.pop(product_id, None)
+                            else:
+                                self.state[product_id] = quantity
                 finally:
                     with self._lock:
                         self.concurrent -= 1
@@ -330,7 +471,7 @@ class CartToolsTests(unittest.TestCase):
         self.assertEqual(requests[0]["method"], "GET")
         self.assertNotIn("Authorization", requests[0]["headers"])
 
-    def test_apteka_repository_add_item_uses_update_endpoint_with_absolute_quantity(self) -> None:
+    def test_apteka_repository_add_item_uses_add_endpoint(self) -> None:
         class FakeResponse:
             def __init__(self, payload: bytes) -> None:
                 self._payload = payload
@@ -357,33 +498,167 @@ class CartToolsTests(unittest.TestCase):
                     "timeout": timeout,
                 }
             )
-            if request.full_url.endswith("/cart"):
-                return FakeResponse(
-                    b'{"data":{"items":[{"product_id":"17405","quantity":1}],"count":1}}'
-                )
-            if request.full_url.endswith("/update"):
+            if request.full_url.endswith("/add"):
                 return FakeResponse(b"{}")
             return FakeResponse(b'{"data":{"items":[],"count":0}}')
 
         repository = AptekaCartRepository(urlopen=fake_urlopen)
         token = CartToken(access_token="tok-1", token_type="Bearer")
-        repository.add_item(token, product_id="17405", quantity=5)
+        repository.add_item(
+            token,
+            product_id="17405",
+            quantity=5,
+            item_meta={
+                "name": "Aspirin Cardio",
+                "price": 31.17,
+                "discount_price": 29.99,
+                "manufacturer": "Bayer",
+            },
+        )
 
         self.assertEqual(
             requests[0]["url"],
-            "https://stage.apteka.md/api/v1/front/cart",
+            "https://stage.apteka.md/api/v1/front/cart/add",
         )
-        self.assertEqual(requests[0]["method"], "GET")
+        self.assertEqual(requests[0]["method"], "POST")
+        self.assertEqual(
+            requests[0]["body"],
+            '{"product_id":"17405","quantity":5,"json":true,"name":"Aspirin Cardio","manufacturer":"Bayer","price":31.17,"discount_price":29.99}',
+        )
+        self.assertEqual(requests[0]["headers"]["Authorization"], "Bearer tok-1")
         self.assertEqual(
             requests[1]["url"],
-            "https://stage.apteka.md/api/v1/front/cart/update",
+            "https://stage.apteka.md/api/v1/front/cart",
         )
-        self.assertEqual(requests[1]["method"], "POST")
+        self.assertEqual(requests[1]["method"], "GET")
+
+    def test_apteka_repository_add_item_does_not_fetch_cart_before_add(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[dict[str, object]] = []
+
+        def fake_urlopen(request, timeout: float):
+            body = request.data.decode("utf-8") if request.data else ""
+            requests.append(
+                {
+                    "url": request.full_url,
+                    "method": request.get_method(),
+                    "body": body,
+                    "timeout": timeout,
+                }
+            )
+            if request.full_url.endswith("/add"):
+                return FakeResponse(b"{}")
+            return FakeResponse(b'{"data":{"items":[],"count":0}}')
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        token = CartToken(access_token="tok-1", token_type="Bearer")
+        repository.add_item(
+            token,
+            product_id="20750",
+            quantity=1,
+            item_meta={
+                "name": "Nurofen",
+                "price": 30.0,
+                "discount_price": 25.0,
+                "manufacturer": "Reckitt",
+            },
+        )
+
+        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart/add")
         self.assertEqual(
-            requests[1]["body"],
-            '{"items":[{"product_id":"17405","quantity":6}],"json":true}',
+            requests[0]["body"],
+            '{"product_id":"20750","quantity":1,"json":true,"name":"Nurofen","manufacturer":"Reckitt","price":30.0,"discount_price":25.0}',
         )
-        self.assertEqual(requests[1]["headers"]["Authorization"], "Bearer tok-1")
+
+    def test_apteka_repository_add_item_falls_back_to_update_when_add_fails(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        requests: list[dict[str, object]] = []
+
+        def fake_urlopen(request, timeout: float):
+            body = request.data.decode("utf-8") if request.data else ""
+            requests.append(
+                {
+                    "url": request.full_url,
+                    "method": request.get_method(),
+                    "body": body,
+                    "timeout": timeout,
+                }
+            )
+            if request.full_url.endswith("/add"):
+                raise HTTPError(request.full_url, 409, "Conflict", hdrs=None, fp=None)
+            if request.full_url.endswith("/update"):
+                return FakeResponse(b"{}")
+            return FakeResponse(
+                b'{"data":{"items":[{"product_id":"17405","quantity":1}],"count":1}}'
+            )
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        token = CartToken(access_token="tok-1", token_type="Bearer")
+        repository.add_item(token, product_id="17405", quantity=1)
+
+        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/cart/add")
+        self.assertEqual(requests[1]["url"], "https://stage.apteka.md/api/v1/front/cart")
+        self.assertEqual(requests[2]["url"], "https://stage.apteka.md/api/v1/front/cart/update")
+        self.assertEqual(
+            requests[2]["body"],
+            '{"items":[{"product_id":"17405","quantity":2}],"json":true}',
+        )
+
+    def test_apteka_repository_maps_item_meta_from_cart_response(self) -> None:
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def read(self) -> bytes:
+                return self._payload
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+                return None
+
+        def fake_urlopen(request, timeout: float):
+            del timeout
+            del request
+            return FakeResponse(
+                b'{"data":{"items":[{"product_id":"17405","quantity":1,"name":"Aspirin Cardio","price":31.17,"discount_price":29.99,"manufacturer":"Bayer"}],"count":1}}'
+            )
+
+        repository = AptekaCartRepository(urlopen=fake_urlopen)
+        snapshot = repository.get_cart(CartToken(access_token="tok-1", token_type="Bearer"))
+
+        self.assertEqual(snapshot.count, 1)
+        self.assertEqual(snapshot.items[0].product_id, "17405")
+        self.assertEqual(snapshot.items[0].quantity, 1)
+        self.assertEqual(snapshot.items[0].name, "Aspirin Cardio")
+        self.assertEqual(snapshot.items[0].price, 31.17)
+        self.assertEqual(snapshot.items[0].discount_price, 29.99)
+        self.assertEqual(snapshot.items[0].manufacturer, "Bayer")
 
     def test_apteka_repository_update_items_calls_update_endpoint(self) -> None:
         class FakeResponse:
