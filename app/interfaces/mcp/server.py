@@ -21,6 +21,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from app.core.config import get_settings
+from app.interfaces.mcp.tools.apteka_urls import get_apteka_base_url
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.checkout_tools import checkout_order
 from app.interfaces.mcp.tools.faq_tools import faq_search
@@ -45,19 +46,24 @@ _RUNTIME_METRICS: dict[str, Any] = {
     "cache_misses_total": 0,
     "tools": {},
 }
-WIDGET_UI_CONFIG: dict[str, Any] = {
-    "domain": "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
-    "csp": {
-        "connectDomains": ["https://stage.apteka.md"],
-        "resourceDomains": [
-            "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
-            "https://stage.apteka.md",
-            "https://www.apteka.md",
-            "https://cdn.jsdelivr.net",
-            "https://api.apteka.md",
-        ],
-    },
-}
+def _build_widget_ui_config() -> dict[str, Any]:
+    apteka_base_url = get_apteka_base_url()
+    resource_domains = [
+        "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+        apteka_base_url,
+        "https://www.apteka.md",
+        "https://cdn.jsdelivr.net",
+    ]
+    return {
+        "domain": "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+        "csp": {
+            "connectDomains": [apteka_base_url],
+            "resourceDomains": resource_domains,
+        },
+    }
+
+
+WIDGET_UI_CONFIG: dict[str, Any] = _build_widget_ui_config()
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,11 +112,15 @@ def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     price = arguments.get("price")
     discount_price = arguments.get("discount_price")
     manufacturer = arguments.get("manufacturer")
+    use_add_endpoint = bool(arguments.get("use_add_endpoint")) if isinstance(
+        arguments.get("use_add_endpoint"), bool
+    ) else False
     return add_to_my_cart(
         product_id=product_id,
         quantity=quantity,
         items=items,
         cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
+        use_add_endpoint=use_add_endpoint,
         name=str(name) if isinstance(name, str) else None,
         price=float(price) if isinstance(price, (int, float)) and not isinstance(price, bool) else None,
         discount_price=(
@@ -196,11 +206,10 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             name="add_to_my_cart",
             description=(
                 "Manage cart with two modes. "
-                "Single add: pass only product_id and optional cart_session_id; "
-                "server uses /cart/add. "
+                "Default mode uses /cart/update with full-state merge. "
+                "For single card add UI, pass use_add_endpoint=true with product_id to use /cart/add. "
                 "Batch update: pass items=[{product_id,quantity},...], "
-                "where quantity is absolute target and 0 removes item; "
-                "server uses /cart/update."
+                "where quantity is absolute target and 0 removes item."
             ),
             input_schema={
                 "type": "object",
@@ -215,6 +224,10 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                     "price": {"type": "number"},
                     "discount_price": {"type": "number"},
                     "manufacturer": {"type": "string"},
+                    "use_add_endpoint": {
+                        "type": "boolean",
+                        "description": "Optional UI-only flag for single-card add via /cart/add.",
+                    },
                     "items": {
                         "type": "array",
                         "items": {

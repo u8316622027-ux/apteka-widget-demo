@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen as default_urlopen
 from app.domain.products.entities import ProductSummary
 from app.domain.products.repository import ProductSearchRepository
 from app.domain.products.service import ProductSearchService
-from app.interfaces.mcp.tools.apteka_urls import build_front_url
+from app.interfaces.mcp.tools.apteka_urls import build_front_url, get_apteka_base_url
 
 APTEKA_SEARCH_PATH = "/search"
 
@@ -67,6 +67,7 @@ def search_products(
             "query": query.strip(),
             "count": 0,
             "products": [],
+            "api_base_url": get_apteka_base_url(),
             "upstream_error": {
                 "status_code": int(error.code),
                 "retryable": retryable,
@@ -77,6 +78,7 @@ def search_products(
             "query": query.strip(),
             "count": 0,
             "products": [],
+            "api_base_url": get_apteka_base_url(),
             "upstream_error": {
                 "status_code": None,
                 "retryable": True,
@@ -86,6 +88,7 @@ def search_products(
         "query": query.strip(),
         "count": len(products),
         "products": [_product_to_dict(product) for product in products],
+        "api_base_url": get_apteka_base_url(),
     }
 
 

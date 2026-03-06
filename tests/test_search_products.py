@@ -114,19 +114,21 @@ class ProductSearchTests(unittest.TestCase):
         with patch.dict("os.environ", {}, clear=True):
             with patch(
                 "app.interfaces.mcp.tools.apteka_urls.read_env_file_value",
-                return_value="",
+                return_value="https://api.apteka.md",
                 create=True,
             ):
                 repository = AptekaSearchRepository(urlopen=fake_urlopen)
                 response = search_products("nurofen", repository=repository, limit=1)
 
         self.assertTrue(requests)
-        self.assertEqual(requests[0]["url"], "https://stage.apteka.md/api/v1/front/search")
+        self.assertEqual(requests[0]["url"], "https://api.apteka.md/api/v1/front/search")
         self.assertEqual(requests[0]["method"], "POST")
         self.assertEqual(requests[0]["body"], '{"query":"nurofen"}')
         self.assertEqual(requests[0]["headers"].get("Content-type"), "application/json")
         self.assertNotIn("Authorization", requests[0]["headers"])
         self.assertEqual(response["count"], 1)
+        self.assertIn("api_base_url", response)
+        self.assertTrue(str(response["api_base_url"]).startswith("https://"))
         self.assertEqual(
             response["products"],
             [
@@ -238,6 +240,16 @@ class ProductSearchTests(unittest.TestCase):
 
         self.assertEqual(requests, ["https://api.apteka.md/api/v1/front/search"])
 
+    def test_search_repository_requires_apteka_base_url_when_env_and_dotenv_are_empty(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            with patch(
+                "app.interfaces.mcp.tools.apteka_urls.read_env_file_value",
+                return_value="",
+                create=True,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "APTEKA_BASE_URL"):
+                    AptekaSearchRepository()
+
     def test_search_products_returns_empty_payload_when_upstream_returns_http_500(self) -> None:
         def fake_urlopen(request, timeout: float):
             del timeout
@@ -249,4 +261,6 @@ class ProductSearchTests(unittest.TestCase):
         self.assertEqual(response["query"], "aspirin")
         self.assertEqual(response["count"], 0)
         self.assertEqual(response["products"], [])
+        self.assertIn("api_base_url", response)
+        self.assertTrue(str(response["api_base_url"]).startswith("https://"))
         self.assertEqual(response["upstream_error"], {"status_code": 500, "retryable": True})

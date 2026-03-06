@@ -7,7 +7,6 @@ from pathlib import Path
 
 from app.core.env import read_env_file_value
 
-DEFAULT_APTEKA_BASE_URL = "https://stage.apteka.md"
 ENV_FILE_PATH = Path(__file__).resolve().parents[4] / ".env"
 
 
@@ -18,7 +17,7 @@ def get_apteka_base_url() -> str:
     from_file = read_env_file_value("APTEKA_BASE_URL", env_path=ENV_FILE_PATH).strip()
     if from_file:
         return from_file.rstrip("/")
-    return DEFAULT_APTEKA_BASE_URL
+    raise RuntimeError("APTEKA_BASE_URL is required and must be set in env or .env")
 
 
 def build_front_url(path: str) -> str:

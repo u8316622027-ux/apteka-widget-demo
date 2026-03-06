@@ -50,6 +50,7 @@ class CartService:
         quantity: int | None = None,
         items: list[tuple[str, int]] | None = None,
         cart_session_id: str | None = None,
+        use_add_endpoint: bool = False,
         name: str | None = None,
         price: float | None = None,
         discount_price: float | None = None,
@@ -74,7 +75,8 @@ class CartService:
         if quantity is not None and quantity < 0:
             raise ValueError("quantity must be greater than or equal to zero")
 
-        # Single-item add path always uses /cart/add semantics.
+        # Single-item default path uses update semantics with full-state merge.
+        # Explicit add endpoint is used only for UI single-card add.
         add_quantity = 1 if quantity is None else quantity
         if add_quantity == 0:
             with _session_update_lock(session_id):
@@ -83,7 +85,7 @@ class CartService:
                     [(normalized_product_id, 0)],
                     item_meta_by_product_id=item_meta_by_product_id,
                 )
-        else:
+        elif use_add_endpoint:
             item_meta = self._build_item_meta(
                 name=name,
                 price=price,
@@ -96,6 +98,30 @@ class CartService:
                 quantity=add_quantity,
                 item_meta=item_meta,
             )
+        else:
+            item_meta = self._build_item_meta(
+                name=name,
+                price=price,
+                discount_price=discount_price,
+                manufacturer=manufacturer,
+            )
+            next_meta_by_product_id = dict(item_meta_by_product_id or {})
+            if item_meta:
+                next_meta_by_product_id[normalized_product_id] = item_meta
+            with _session_update_lock(session_id):
+                current_snapshot = self._repository.get_cart(token)
+                current_quantity = 0
+                for item in current_snapshot.items:
+                    if item.product_id == normalized_product_id:
+                        current_quantity = max(0, item.quantity)
+                        break
+                next_quantity = max(0, current_quantity + add_quantity)
+                snapshot = self._update_cart_with_merge(
+                    token,
+                    [(normalized_product_id, next_quantity)],
+                    item_meta_by_product_id=next_meta_by_product_id or None,
+                    current_snapshot=current_snapshot,
+                )
         return self._response_payload(session_id, created, snapshot)
 
     def _normalize_items(self, items: list[tuple[str, int]]) -> list[tuple[str, int]]:
@@ -117,11 +143,61 @@ class CartService:
         updates: list[tuple[str, int]],
         *,
         item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
+        current_snapshot: CartSnapshot | None = None,
     ) -> CartSnapshot:
+        current = current_snapshot or self._repository.get_cart(token)
+        merged_quantities: dict[str, int] = {}
+        merged_item_meta_by_product_id: dict[str, dict[str, object]] = {}
+
+        for item in current.items:
+            if item.quantity <= 0:
+                continue
+            merged_quantities[item.product_id] = item.quantity
+            meta: dict[str, object] = {}
+            if item.name is not None:
+                meta["name"] = item.name
+            if item.manufacturer is not None:
+                meta["manufacturer"] = item.manufacturer
+            if item.price is not None:
+                meta["price"] = float(item.price)
+            if item.discount_price is not None:
+                meta["discount_price"] = float(item.discount_price)
+            if meta:
+                merged_item_meta_by_product_id[item.product_id] = meta
+
+        for product_id, quantity in updates:
+            if quantity <= 0:
+                merged_quantities.pop(product_id, None)
+            else:
+                merged_quantities[product_id] = quantity
+
+        if item_meta_by_product_id:
+            for product_id, raw_meta in item_meta_by_product_id.items():
+                if product_id not in merged_quantities:
+                    continue
+                cleaned_meta: dict[str, object] = {}
+                for key in ("name", "manufacturer", "price", "discount_price"):
+                    value = raw_meta.get(key)
+                    if value is None:
+                        continue
+                    cleaned_meta[key] = value
+                if cleaned_meta:
+                    previous_meta = merged_item_meta_by_product_id.get(product_id, {})
+                    merged_item_meta_by_product_id[product_id] = {
+                        **previous_meta,
+                        **cleaned_meta,
+                    }
+
+        merged_items = list(merged_quantities.items())
+        merged_meta_payload = {
+            product_id: meta
+            for product_id, meta in merged_item_meta_by_product_id.items()
+            if product_id in merged_quantities
+        }
         return self._repository.update_items(
             token,
-            items=updates,
-            item_meta_by_product_id=item_meta_by_product_id,
+            items=merged_items,
+            item_meta_by_product_id=merged_meta_payload or None,
         )
 
     def _build_item_meta(

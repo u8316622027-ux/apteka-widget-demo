@@ -883,16 +883,12 @@
           return;
         }
 
-        const SEARCH_ENDPOINT = "https://stage.apteka.md/api/v1/front/search";
-        const SEARCH_ORIGIN = new URL(SEARCH_ENDPOINT).origin;
-        const SEARCH_TIMEOUT_MS = 7000;
-        const MAX_SEARCH_ATTEMPTS = 3;
         const INITIAL_PAYLOAD_WAIT_MS = 5000;
         const INITIAL_PAYLOAD_POLL_MS = 140;
         const LOCAL_CART_KEY = "apteka_widget_cart";
         const CART_ITEMS_KEY = "apteka_widget_cart_items";
         const LOCAL_CART_SESSION_ID_KEY = "apteka_widget_cart_session_id";
-        const FALLBACK_IMAGE = "https://api.apteka.md/assets/images/placeholder-600x600.png";
+        const FALLBACK_IMAGE_PATH = "/assets/images/placeholder-600x600.png";
         const memoryStorage = Object.create(null);
 
         const state = {
@@ -901,6 +897,7 @@
           isLoading: true,
           products: [],
           lastQuery: "",
+          apiBaseUrl: "",
         };
 
         const input = document.getElementById("products-search-input");
@@ -968,7 +965,27 @@
           if (/^https?:\/\//i.test(imageUrl)) {
             return imageUrl;
           }
-          return new URL(imageUrl, SEARCH_ORIGIN).href;
+          const baseUrl = normalizeText(state.apiBaseUrl);
+          if (!baseUrl) {
+            return imageUrl;
+          }
+          try {
+            return new URL(imageUrl, baseUrl).href;
+          } catch (_error) {
+            return imageUrl;
+          }
+        };
+
+        const getFallbackImage = () => {
+          const baseUrl = normalizeText(state.apiBaseUrl);
+          if (!baseUrl) {
+            return FALLBACK_IMAGE_PATH;
+          }
+          try {
+            return new URL(FALLBACK_IMAGE_PATH, baseUrl).href;
+          } catch (_error) {
+            return FALLBACK_IMAGE_PATH;
+          }
         };
 
         const setLoading = (nextValue) => {
@@ -1087,7 +1104,7 @@
               extractFromObjects(item.media);
           }
           if (!imageUrl) {
-            imageUrl = FALLBACK_IMAGE;
+            imageUrl = getFallbackImage();
           }
 
           return {
@@ -1113,6 +1130,7 @@
           }
           const payload = {
             product_id: productId,
+            use_add_endpoint: true,
             name: normalizeText(product?.name) || undefined,
             price: typeof product?.price === "number" ? product.price : undefined,
             discount_price:
@@ -1132,23 +1150,34 @@
           });
         };
 
-        const callSetCartItemQuantity = (productId, quantity, itemMeta) => {
-          const normalizedProductId = normalizeText(productId);
-          if (!normalizedProductId) {
-            return Promise.resolve();
-          }
+        const callSetCartItemQuantity = () => {
           if (typeof window.openai?.callTool !== "function") {
             return Promise.reject(new Error("openai.callTool is unavailable"));
           }
-          const payloadItem = {
-            product_id: normalizedProductId,
-            quantity,
-            name: normalizeText(itemMeta?.name) || undefined,
-            manufacturer: normalizeText(itemMeta?.manufacturer) || undefined,
-            price: typeof itemMeta?.price === "number" ? itemMeta.price : undefined,
-            discount_price: typeof itemMeta?.discountPrice === "number" ? itemMeta.discountPrice : undefined,
-          };
-          return window.openai.callTool("add_to_my_cart", { items: [payloadItem] });
+          const localCart = readLocalCart();
+          const cartItems = readCartItems();
+          const payloadItems = Object.entries(localCart)
+            .map(([productId, rawQuantity]) => {
+              const normalizedProductId = normalizeText(productId);
+              const quantity = normalizeCartQuantity(rawQuantity);
+              if (!normalizedProductId || quantity <= 0) {
+                return null;
+              }
+              const itemMeta = cartItems[normalizedProductId];
+              return {
+                product_id: normalizedProductId,
+                quantity,
+                name: normalizeText(itemMeta?.name) || undefined,
+                manufacturer: normalizeText(itemMeta?.manufacturer) || undefined,
+                price: typeof itemMeta?.price === "number" ? itemMeta.price : undefined,
+                discount_price: typeof itemMeta?.discountPrice === "number" ? itemMeta.discountPrice : undefined,
+              };
+            })
+            .filter(Boolean);
+          if (!payloadItems.length) {
+            return Promise.resolve();
+          }
+          return window.openai.callTool("add_to_my_cart", { items: payloadItems });
         };
 
         const readLocalCartCount = () => {
@@ -1225,6 +1254,18 @@
           writeCartItems(localItems);
         };
 
+        const bootstrapCartFromBackend = async () => {
+          if (typeof window.openai?.callTool !== "function") {
+            return false;
+          }
+          try {
+            const toolResult = await window.openai.callTool("my_cart", {});
+            return syncLocalCartFromToolPayload(toolResult);
+          } catch (_error) {
+            return false;
+          }
+        };
+
         const rememberCartItem = (productId) => {
           if (!productId) {
             return;
@@ -1240,7 +1281,7 @@
             manufacturer: product.manufacturer,
             price: product.price,
             discountPrice: product.discountPrice,
-            imageUrl: product.imageUrl || FALLBACK_IMAGE,
+            imageUrl: product.imageUrl || getFallbackImage(),
           };
           writeCartItems(payload);
         };
@@ -1320,7 +1361,9 @@
                 normalizeText(rawItem.manufacturer) || normalizeText(previous?.manufacturer) || "Производитель не указан",
               price: Number(rawItem.price ?? previous?.price) || null,
               discountPrice: Number(rawItem.discountPrice ?? rawItem.discount_price ?? previous?.discountPrice) || null,
-              imageUrl: resolveImageUrl(rawItem.image_url || rawItem.imageUrl || rawItem.image || previous?.imageUrl) || FALLBACK_IMAGE,
+              imageUrl:
+                resolveImageUrl(rawItem.image_url || rawItem.imageUrl || rawItem.image || previous?.imageUrl) ||
+                getFallbackImage(),
             };
           });
 
@@ -1430,7 +1473,7 @@
               const item = (cartItems[productId] && typeof cartItems[productId] === "object" ? cartItems[productId] : fromProductsState) || {};
               const unitPrice = getPriceForCart(item);
               const lineTotal = unitPrice * quantity;
-              const imageUrl = normalizeText(item.imageUrl) || FALLBACK_IMAGE;
+              const imageUrl = normalizeText(item.imageUrl) || getFallbackImage();
               return {
                 productId,
                 quantity,
@@ -1458,7 +1501,7 @@
                     src="${row.imageUrl}"
                     alt="${row.name}"
                     loading="lazy"
-                    onerror="this.onerror=null;this.src='${FALLBACK_IMAGE}'"
+                    onerror="this.onerror=null;this.src='${getFallbackImage()}'"
                   />
                   <div>
                     <p class="cart-modal-item-name">${row.name}</p>
@@ -1581,7 +1624,7 @@
                     src="${product.imageUrl}"
                     alt="${product.name}"
                     loading="lazy"
-                    onerror="this.onerror=null;this.src='${FALLBACK_IMAGE}'"
+                    onerror="this.onerror=null;this.src='${getFallbackImage()}'"
                   />
                   <h3 class="product-title">${product.name}</h3>
                   <div class="product-manufacturer-row">
@@ -1685,6 +1728,9 @@
           if (!payload || typeof payload !== "object") {
             return false;
           }
+          if (normalizeText(payload.api_base_url)) {
+            state.apiBaseUrl = normalizeText(payload.api_base_url);
+          }
           const mapped = extractItems(payload).map(mapProduct).filter((product) => product.id);
           if (!mapped.length) {
             return false;
@@ -1768,26 +1814,16 @@
           setLoading(true);
 
           try {
-            let payload = null;
-            for (let attempt = 1; attempt <= MAX_SEARCH_ATTEMPTS; attempt += 1) {
-              const controller = new AbortController();
-              const timeoutId = window.setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
-              try {
-                const response = await fetch(SEARCH_ENDPOINT, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ query: normalized }),
-                  signal: controller.signal,
-                });
-                payload = await response.json();
-                break;
-              } catch (_error) {
-                if (attempt >= MAX_SEARCH_ATTEMPTS) {
-                  throw _error;
-                }
-              } finally {
-                window.clearTimeout(timeoutId);
-              }
+            if (typeof window.openai?.callTool !== "function") {
+              throw new Error("openai.callTool is unavailable");
+            }
+            const toolResult = await window.openai.callTool("search_products", { query: normalized });
+            const payload =
+              (toolResult && typeof toolResult === "object" && toolResult.structuredContent) ||
+              toolResult ||
+              {};
+            if (normalizeText(payload.api_base_url)) {
+              state.apiBaseUrl = normalizeText(payload.api_base_url);
             }
             state.products = extractItems(payload).map(mapProduct).filter((product) => product.id);
           } catch (_error) {
@@ -1949,8 +1985,7 @@
             writeLocalCart(payload);
             renderCartBadge();
             renderCartModal();
-            const itemMeta = readCartItems()[productId];
-            Promise.resolve(callSetCartItemQuantity(productId, Number(payload[productId] || 0), itemMeta))
+            Promise.resolve(callSetCartItemQuantity())
               .then((result) => {
                 syncLocalCartFromToolPayload(result);
               })
@@ -1977,14 +2012,16 @@
         setLoading(true);
         renderProducts();
 
-        waitForInitialPayload().then((didHydrateFromToolPayload) => {
-          if (!didHydrateFromToolPayload) {
-            state.loadedOnce = true;
-            setLoading(false);
-            renderProducts();
-          }
-          updateCarouselControls();
-        });
+        Promise.resolve(bootstrapCartFromBackend())
+          .then(() => waitForInitialPayload())
+          .then((didHydrateFromToolPayload) => {
+            if (!didHydrateFromToolPayload) {
+              state.loadedOnce = true;
+              setLoading(false);
+              renderProducts();
+            }
+            updateCarouselControls();
+          });
 
         const activeWidgetId = String(root.getAttribute("data-widget-shell") || "").trim();
         if (!activeWidgetId || typeof window.BroadcastChannel !== "function") {

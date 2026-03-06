@@ -107,13 +107,12 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("background:transparent", compact)
         self.assertNotIn("background:#1a1d23", compact)
 
-    def test_products_template_calls_search_endpoint(self) -> None:
+    def test_products_template_calls_search_tool(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
-        self.assertIn("https://stage.apteka.md/api/v1/front/search", template_text)
+        self.assertIn('window.openai.callTool("search_products"', template_text)
+        self.assertNotIn("https://stage.apteka.md/api/v1/front/search", template_text)
         self.assertIn("localStorage", template_text)
-        self.assertIn("AbortController", template_text)
-        self.assertIn("MAX_SEARCH_ATTEMPTS", template_text)
-        self.assertIn("SEARCH_TIMEOUT_MS", template_text)
+        self.assertIn("api_base_url", template_text)
         self.assertNotIn('|| "аспирин"', template_text)
         self.assertNotIn("renderProducts();\n        searchProducts(", template_text)
 
@@ -142,8 +141,10 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_normalizes_product_image_urls(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("const resolveImageUrl", template_text)
-        self.assertIn("new URL(imageUrl, SEARCH_ORIGIN)", template_text)
-        self.assertIn("https://api.apteka.md/assets/images/placeholder-600x600.png", template_text)
+        self.assertIn("new URL(imageUrl, baseUrl)", template_text)
+        self.assertIn("const getFallbackImage", template_text)
+        self.assertIn('"/assets/images/placeholder-600x600.png"', template_text)
+        self.assertNotIn("https://api.apteka.md/assets/images/placeholder-600x600.png", template_text)
 
     def test_products_template_maps_name_from_ru_ro_fields(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
@@ -250,7 +251,8 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("const callAddToMyCart = (product) =>", template_text)
         self.assertIn("Promise.resolve(callAddToMyCart(product))", template_text)
         self.assertIn("syncLocalCartFromToolPayload(result)", template_text)
-        self.assertIn("const callSetCartItemQuantity = (productId, quantity, itemMeta) =>", template_text)
+        self.assertIn("const callSetCartItemQuantity = () =>", template_text)
+        self.assertIn('window.openai.callTool("add_to_my_cart", { items: payloadItems })', template_text)
         self.assertIn('debugLog("add_to_cart_click"', template_text)
         self.assertIn('debugLog("call_add_to_my_cart_start"', template_text)
         self.assertIn('debugLog("call_add_to_my_cart_error"', template_text)
@@ -282,6 +284,9 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_bootstraps_local_cart_storage(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("ensureLocalCartBootstrap", template_text)
+        self.assertIn("bootstrapCartFromBackend", template_text)
+        self.assertIn('window.openai.callTool("my_cart", {})', template_text)
+        self.assertIn("Promise.resolve(bootstrapCartFromBackend())", template_text)
         self.assertIn("writeStorageValue(LOCAL_CART_KEY", template_text)
         self.assertIn("writeStorageValue(CART_ITEMS_KEY", template_text)
         self.assertIn("LOCAL_CART_SESSION_ID_KEY", template_text)
@@ -289,6 +294,11 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("writeStoredCartSessionId", template_text)
         self.assertIn("clearLocalCartState", template_text)
         self.assertIn("storedSessionId !== nextSessionId", template_text)
+
+    def test_products_template_uses_add_endpoint_for_card_add_only(self) -> None:
+        template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
+        self.assertIn("use_add_endpoint: true", template_text)
+        self.assertIn('window.openai.callTool("add_to_my_cart", payload)', template_text)
 
     def test_products_template_uses_loading_blur_overlay(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")

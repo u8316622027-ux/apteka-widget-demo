@@ -250,18 +250,26 @@ class AptekaCartRepository(CartApiRepository):
                 return self.get_cart(token)
         except HTTPError:
             current = self.get_cart(token)
+            merged_items: list[tuple[str, int]] = []
             current_quantity = 0
             for item in current.items:
+                if item.quantity <= 0:
+                    continue
+                merged_items.append((item.product_id, item.quantity))
                 if item.product_id == product_id:
                     current_quantity = item.quantity
-                    break
             next_quantity = max(0, current_quantity + quantity)
+            merged_by_product_id: dict[str, int] = {item_id: item_qty for item_id, item_qty in merged_items}
+            if next_quantity <= 0:
+                merged_by_product_id.pop(product_id, None)
+            else:
+                merged_by_product_id[product_id] = next_quantity
             meta_payload: dict[str, dict[str, object]] = {}
             if item_meta:
                 meta_payload[product_id] = _normalize_item_meta_payload(item_meta)
             return self.update_items(
                 token,
-                items=[(product_id, next_quantity)],
+                items=list(merged_by_product_id.items()),
                 item_meta_by_product_id=meta_payload or None,
             )
 
@@ -314,6 +322,7 @@ def add_to_my_cart(
     quantity: int | None = None,
     items: list[dict[str, object]] | None = None,
     cart_session_id: str | None = None,
+    use_add_endpoint: bool = False,
     name: str | None = None,
     price: float | None = None,
     discount_price: float | None = None,
@@ -353,6 +362,7 @@ def add_to_my_cart(
         quantity=quantity,
         items=normalized_items,
         cart_session_id=normalize_cart_session_id(cart_session_id),
+        use_add_endpoint=bool(use_add_endpoint),
         name=str(name) if isinstance(name, str) else None,
         price=float(price) if isinstance(price, (int, float)) and not isinstance(price, bool) else None,
         discount_price=(
