@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import gzip
+import hashlib
 import json
 import threading
 import unittest
@@ -151,6 +152,8 @@ class MCPServerTests(unittest.TestCase):
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
             tool_payload["ui"]["csp"]["resourceDomains"],
         )
+        self.assertIn("https://stage.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
+        self.assertIn("https://stage.apteka.md", tool_payload["ui"]["csp"]["connectDomains"])
         self.assertIn("https://www.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("https://cdn.jsdelivr.net", tool_payload["ui"]["csp"]["resourceDomains"])
         self.assertIn("https://api.apteka.md", tool_payload["ui"]["csp"]["resourceDomains"])
@@ -438,11 +441,17 @@ class MCPServerTests(unittest.TestCase):
             contents[0]["_meta"]["openai/widgetCSP"]["resource_domains"],
             [
                 "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
+                "https://stage.apteka.md",
                 "https://www.apteka.md",
                 "https://cdn.jsdelivr.net",
                 "https://api.apteka.md",
             ],
         )
+        self.assertEqual(
+            contents[0]["_meta"]["openai/widgetCSP"]["connect_domains"],
+            ["https://stage.apteka.md"],
+        )
+
 
     def test_tools_call_requires_string_name(self) -> None:
         registry = create_tool_registry()
@@ -827,6 +836,10 @@ class MCPServerTests(unittest.TestCase):
                             "cart_session_id": "sess-1",
                             "product_id": "A12",
                             "quantity": 2,
+                            "name": "Aspirin Cardio",
+                            "price": 31.17,
+                            "discount_price": 29.99,
+                            "manufacturer": "Bayer",
                         },
                     },
                 },
@@ -838,6 +851,10 @@ class MCPServerTests(unittest.TestCase):
             quantity=2,
             items=None,
             cart_session_id="sess-1",
+            name="Aspirin Cardio",
+            price=31.17,
+            discount_price=29.99,
+            manufacturer="Bayer",
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
@@ -876,9 +893,120 @@ class MCPServerTests(unittest.TestCase):
             quantity=None,
             items=[{"product_id": "20859", "quantity": 1}],
             cart_session_id="sess-1",
+            name=None,
+            price=None,
+            discount_price=None,
+            manufacturer=None,
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 2)
+
+    def test_tools_call_my_cart_uses_subject_fallback_when_arguments_empty(self) -> None:
+        registry = create_tool_registry()
+        subject = (
+            "v1/34yeCSl5CCCNz0KLyvYVFk2it1LGMK0y67ZuwKsBpdoIn7ausSnvPLX6i1hgBmqGv4eQehFzqnghSPxOY0J0nlKVCycy1fbRV37qpp1"
+        )
+        expected_session_id = hashlib.sha256(f"cart:v1:{subject}".encode("utf-8")).hexdigest()
+
+        with patch(
+            "app.interfaces.mcp.server.my_cart",
+            return_value={
+                "cart_session_id": expected_session_id,
+                "count": 1,
+                "items": [{"product_id": "20859", "quantity": 1}],
+            },
+        ) as mocked_my_cart:
+            my_cart_response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 802,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "my_cart",
+                        "_meta": {"openai/subject": subject},
+                        "arguments": {},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_my_cart.assert_called_once_with(cart_session_id=expected_session_id)
+        self.assertFalse(my_cart_response["result"]["isError"])
+        self.assertEqual(my_cart_response["result"]["structuredContent"]["count"], 1)
+
+    def test_tools_call_add_to_my_cart_uses_subject_fallback_when_arguments_missing_session(self) -> None:
+        registry = create_tool_registry()
+        subject = (
+            "v1/34yeCSl5CCCNz0KLyvYVFk2it1LGMK0y67ZuwKsBpdoIn7ausSnvPLX6i1hgBmqGv4eQehFzqnghSPxOY0J0nlKVCycy1fbRV37qpp1"
+        )
+        expected_session_id = hashlib.sha256(f"cart:v1:{subject}".encode("utf-8")).hexdigest()
+
+        with patch(
+            "app.interfaces.mcp.server.add_to_my_cart",
+            return_value={
+                "cart_session_id": expected_session_id,
+                "count": 1,
+                "items": [{"product_id": "20859", "quantity": 1}],
+            },
+        ) as mocked_add_to_my_cart:
+            response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 813,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "add_to_my_cart",
+                        "_meta": {"openai/subject": subject},
+                        "arguments": {"product_id": "20859"},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_add_to_my_cart.assert_called_once_with(
+            product_id="20859",
+            quantity=None,
+            items=None,
+            cart_session_id=expected_session_id,
+            name=None,
+            price=None,
+            discount_price=None,
+            manufacturer=None,
+        )
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+
+    def test_tools_call_my_cart_prioritizes_arguments_over_subject_fallback(self) -> None:
+        registry = create_tool_registry()
+        subject = (
+            "v1/34yeCSl5CCCNz0KLyvYVFk2it1LGMK0y67ZuwKsBpdoIn7ausSnvPLX6i1hgBmqGv4eQehFzqnghSPxOY0J0nlKVCycy1fbRV37qpp1"
+        )
+
+        with patch(
+            "app.interfaces.mcp.server.my_cart",
+            return_value={
+                "cart_session_id": "6a6094887f254e18801aef64fa342348",
+                "count": 0,
+                "items": [],
+            },
+        ) as mocked_my_cart:
+            my_cart_response = handle_rpc_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 812,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "my_cart",
+                        "_meta": {"openai/subject": subject},
+                        "arguments": {"cart_session_id": "6a6094887f254e18801aef64fa342348"},
+                    },
+                },
+                registry=registry,
+            )
+
+        mocked_my_cart.assert_called_once_with(cart_session_id="6a6094887f254e18801aef64fa342348")
+        self.assertFalse(my_cart_response["result"]["isError"])
+        self.assertEqual(my_cart_response["result"]["structuredContent"]["count"], 0)
 
     def test_tools_call_checkout_order_delegates_to_checkout_tool(self) -> None:
         registry = create_tool_registry()
@@ -977,15 +1105,16 @@ class MCPHttpTransportRequestIdTests(unittest.TestCase):
         self.assertTrue(len(headers["x-request-id"]) >= 8)
 
     def test_http_response_uses_gzip_for_large_payload_when_accepted(self) -> None:
-        status, headers, raw_body = self._post_mcp(
-            {
-                "jsonrpc": "2.0",
-                "id": 3,
-                "method": "tools/call",
-                "params": {"name": "search_products", "arguments": {"query": "q"}},
-            },
-            headers={"Accept-Encoding": "gzip"},
-        )
+        with patch("app.interfaces.mcp.server.MIN_GZIP_BYTES", 1):
+            status, headers, raw_body = self._post_mcp(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "search_products", "arguments": {"query": "q"}},
+                },
+                headers={"Accept-Encoding": "gzip"},
+            )
         self.assertEqual(status, 200)
         self.assertEqual(headers.get("content-encoding"), "gzip")
         decoded = gzip.decompress(raw_body).decode("utf-8")

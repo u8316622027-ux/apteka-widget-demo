@@ -50,13 +50,22 @@ class CartService:
         quantity: int | None = None,
         items: list[tuple[str, int]] | None = None,
         cart_session_id: str | None = None,
+        name: str | None = None,
+        price: float | None = None,
+        discount_price: float | None = None,
+        manufacturer: str | None = None,
+        item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
     ) -> dict[str, object]:
         session_id, token, created = self._ensure_session(cart_session_id)
 
         if items:
             normalized_updates = self._normalize_items(items)
             with _session_update_lock(session_id):
-                snapshot = self._update_cart_with_merge(token, normalized_updates)
+                snapshot = self._update_cart_with_merge(
+                    token,
+                    normalized_updates,
+                    item_meta_by_product_id=item_meta_by_product_id,
+                )
             return self._response_payload(session_id, created, snapshot)
 
         normalized_product_id = (product_id or "").strip()
@@ -69,12 +78,23 @@ class CartService:
         add_quantity = 1 if quantity is None else quantity
         if add_quantity == 0:
             with _session_update_lock(session_id):
-                snapshot = self._update_cart_with_merge(token, [(normalized_product_id, 0)])
+                snapshot = self._update_cart_with_merge(
+                    token,
+                    [(normalized_product_id, 0)],
+                    item_meta_by_product_id=item_meta_by_product_id,
+                )
         else:
+            item_meta = self._build_item_meta(
+                name=name,
+                price=price,
+                discount_price=discount_price,
+                manufacturer=manufacturer,
+            )
             snapshot = self._repository.add_item(
                 token,
                 product_id=normalized_product_id,
                 quantity=add_quantity,
+                item_meta=item_meta,
             )
         return self._response_payload(session_id, created, snapshot)
 
@@ -95,17 +115,37 @@ class CartService:
         self,
         token: CartToken,
         updates: list[tuple[str, int]],
+        *,
+        item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
     ) -> CartSnapshot:
-        current = self._repository.get_cart(token)
-        merged: dict[str, int] = {item.product_id: item.quantity for item in current.items}
-        for product_id, quantity in updates:
-            if quantity == 0:
-                merged.pop(product_id, None)
-                continue
-            merged[product_id] = quantity
+        return self._repository.update_items(
+            token,
+            items=updates,
+            item_meta_by_product_id=item_meta_by_product_id,
+        )
 
-        merged_items = list(merged.items())
-        return self._repository.update_items(token, items=merged_items)
+    def _build_item_meta(
+        self,
+        *,
+        name: str | None,
+        price: float | None,
+        discount_price: float | None,
+        manufacturer: str | None,
+    ) -> dict[str, object] | None:
+        payload: dict[str, object] = {}
+        normalized_name = (name or "").strip()
+        normalized_manufacturer = (manufacturer or "").strip()
+        if normalized_name:
+            payload["name"] = normalized_name
+        if normalized_manufacturer:
+            payload["manufacturer"] = normalized_manufacturer
+        if price is not None:
+            payload["price"] = float(price)
+        if discount_price is not None:
+            payload["discount_price"] = float(discount_price)
+        if not payload:
+            return None
+        return payload
 
     def _ensure_session(self, cart_session_id: str | None) -> tuple[str, CartToken, bool]:
         normalized_session_id = (cart_session_id or "").strip()
@@ -113,6 +153,9 @@ class CartService:
             token = self._token_store.get_token(normalized_session_id)
             if token is not None:
                 return normalized_session_id, token, False
+            token = self._repository.create_cart()
+            self._token_store.set_token(normalized_session_id, token)
+            return normalized_session_id, token, True
 
         token = self._repository.create_cart()
         created_session_id = self._session_id_factory()

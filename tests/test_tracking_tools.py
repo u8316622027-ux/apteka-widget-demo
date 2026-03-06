@@ -13,6 +13,15 @@ from app.interfaces.mcp.tools.tracking_tools import (
 
 
 class OrderTrackingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._base_url_patcher = patch.dict(
+            os.environ,
+            {"APTEKA_BASE_URL": "https://stage.apteka.md"},
+            clear=False,
+        )
+        self._base_url_patcher.start()
+        self.addCleanup(self._base_url_patcher.stop)
+
     def test_track_order_status_ui_rejects_empty_lookup(self) -> None:
         with self.assertRaisesRegex(ValueError, "lookup must not be empty"):
             track_order_status_ui("   ")

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from time import time
 from typing import Any, Callable
+from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen as default_urlopen
 
@@ -213,19 +214,70 @@ class AptekaCartRepository(CartApiRepository):
 
         return _map_cart_snapshot(payload)
 
-    def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
+    def add_item(
+        self,
+        token: CartToken,
+        *,
+        product_id: str,
+        quantity: int,
+        item_meta: dict[str, object] | None = None,
+    ) -> CartSnapshot:
         if quantity <= 0:
             return self.get_cart(token)
-        current = self.get_cart(token)
-        merged: dict[str, int] = {item.product_id: item.quantity for item in current.items}
-        merged[product_id] = merged.get(product_id, 0) + quantity
-        return self.update_items(token, items=list(merged.items()))
+        payload: dict[str, object] = {
+            "product_id": product_id,
+            "quantity": quantity,
+            "json": True,
+        }
+        if item_meta:
+            payload.update(_normalize_item_meta_payload(item_meta))
+        request_payload = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = Request(
+            url=f"{self._base_url}/add",
+            method="POST",
+            data=request_payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"{token.token_type} {token.access_token}",
+            },
+        )
+        try:
+            with self._urlopen(request, timeout=self._timeout):
+                return self.get_cart(token)
+        except HTTPError:
+            current = self.get_cart(token)
+            current_quantity = 0
+            for item in current.items:
+                if item.product_id == product_id:
+                    current_quantity = item.quantity
+                    break
+            next_quantity = max(0, current_quantity + quantity)
+            meta_payload: dict[str, dict[str, object]] = {}
+            if item_meta:
+                meta_payload[product_id] = _normalize_item_meta_payload(item_meta)
+            return self.update_items(
+                token,
+                items=[(product_id, next_quantity)],
+                item_meta_by_product_id=meta_payload or None,
+            )
 
-    def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
-        update_items_payload = [
-            {"product_id": product_id, "quantity": quantity}
-            for product_id, quantity in items
-        ]
+    def update_items(
+        self,
+        token: CartToken,
+        *,
+        items: list[tuple[str, int]],
+        item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
+    ) -> CartSnapshot:
+        update_items_payload: list[dict[str, object]] = []
+        for product_id, quantity in items:
+            row: dict[str, object] = {"product_id": product_id, "quantity": quantity}
+            if item_meta_by_product_id and product_id in item_meta_by_product_id:
+                row.update(_normalize_item_meta_payload(item_meta_by_product_id[product_id]))
+            update_items_payload.append(row)
         request_payload = json.dumps(
             {"items": update_items_payload, "json": True},
             ensure_ascii=False,
@@ -262,6 +314,10 @@ def add_to_my_cart(
     quantity: int | None = None,
     items: list[dict[str, object]] | None = None,
     cart_session_id: str | None = None,
+    name: str | None = None,
+    price: float | None = None,
+    discount_price: float | None = None,
+    manufacturer: str | None = None,
     repository: CartApiRepository | None = None,
     token_store: CartTokenStore | None = None,
 ) -> dict[str, object]:
@@ -269,8 +325,10 @@ def add_to_my_cart(
 
     service = _build_cart_service(repository=repository, token_store=token_store)
     normalized_items: list[tuple[str, int]] | None = None
+    item_meta_by_product_id: dict[str, dict[str, object]] | None = None
     if items:
         normalized_items = []
+        item_meta_by_product_id = {}
         for raw_item in items:
             if not isinstance(raw_item, dict):
                 raise ValueError("items must be an array of objects")
@@ -284,12 +342,26 @@ def add_to_my_cart(
             except (TypeError, ValueError):
                 raise ValueError("items quantity must be an integer") from None
             normalized_items.append((normalized_product_id, normalized_quantity))
+            normalized_meta = _normalize_item_meta_payload(raw_item)
+            if normalized_meta:
+                item_meta_by_product_id[normalized_product_id] = normalized_meta
+        if not item_meta_by_product_id:
+            item_meta_by_product_id = None
 
     return service.add_to_cart(
         product_id=product_id,
         quantity=quantity,
         items=normalized_items,
         cart_session_id=normalize_cart_session_id(cart_session_id),
+        name=str(name) if isinstance(name, str) else None,
+        price=float(price) if isinstance(price, (int, float)) and not isinstance(price, bool) else None,
+        discount_price=(
+            float(discount_price)
+            if isinstance(discount_price, (int, float)) and not isinstance(discount_price, bool)
+            else None
+        ),
+        manufacturer=str(manufacturer) if isinstance(manufacturer, str) else None,
+        item_meta_by_product_id=item_meta_by_product_id,
     )
 
 
@@ -366,7 +438,34 @@ def _map_cart_snapshot(payload: Any) -> CartSnapshot:
                 quantity = 1
             if quantity < 0:
                 quantity = 0
-            items.append(CartItem(product_id=product_id, quantity=quantity))
+            raw_name = raw_item.get("name")
+            raw_manufacturer = raw_item.get("manufacturer")
+            raw_price = raw_item.get("price")
+            raw_discount_price = raw_item.get("discount_price")
+            name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+            manufacturer = (
+                raw_manufacturer.strip()
+                if isinstance(raw_manufacturer, str) and raw_manufacturer.strip()
+                else None
+            )
+            price: float | None = None
+            discount_price: float | None = None
+            if isinstance(raw_price, (int, float)) and not isinstance(raw_price, bool):
+                price = float(raw_price)
+            if isinstance(raw_discount_price, (int, float)) and not isinstance(
+                raw_discount_price, bool
+            ):
+                discount_price = float(raw_discount_price)
+            items.append(
+                CartItem(
+                    product_id=product_id,
+                    quantity=quantity,
+                    name=name,
+                    price=price,
+                    discount_price=discount_price,
+                    manufacturer=manufacturer,
+                )
+            )
 
     count_raw = node.get("count")
     if count_raw is None:
@@ -390,3 +489,28 @@ def _map_cart_snapshot(payload: Any) -> CartSnapshot:
             total = None
 
     return CartSnapshot(items=items, count=count, total=total)
+
+
+def _normalize_item_meta_payload(raw_payload: dict[str, object]) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    raw_name = raw_payload.get("name")
+    if isinstance(raw_name, str):
+        name = raw_name.strip()
+        if name:
+            payload["name"] = name
+
+    raw_manufacturer = raw_payload.get("manufacturer")
+    if isinstance(raw_manufacturer, str):
+        manufacturer = raw_manufacturer.strip()
+        if manufacturer:
+            payload["manufacturer"] = manufacturer
+
+    raw_price = raw_payload.get("price")
+    if isinstance(raw_price, (int, float)) and not isinstance(raw_price, bool):
+        payload["price"] = float(raw_price)
+
+    raw_discount_price = raw_payload.get("discount_price")
+    if isinstance(raw_discount_price, (int, float)) and not isinstance(raw_discount_price, bool):
+        payload["discount_price"] = float(raw_discount_price)
+
+    return payload

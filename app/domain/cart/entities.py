@@ -19,6 +19,10 @@ class CartItem:
 
     product_id: str
     quantity: int
+    name: str | None = None
+    price: float | None = None
+    discount_price: float | None = None
+    manufacturer: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -40,11 +40,26 @@ class FakeCartRepository:
         ]
         return CartSnapshot(items=items, count=len(items), total=float(sum(quantities.values())))
 
-    def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
+    def add_item(
+        self,
+        token: CartToken,
+        *,
+        product_id: str,
+        quantity: int,
+        item_meta: dict[str, object] | None = None,
+    ) -> CartSnapshot:
+        del item_meta
         self.add_calls.append((token.access_token, product_id, quantity))
         return self.get_cart(token)
 
-    def update_items(self, token: CartToken, *, items: list[tuple[str, int]]) -> CartSnapshot:
+    def update_items(
+        self,
+        token: CartToken,
+        *,
+        items: list[tuple[str, int]],
+        item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
+    ) -> CartSnapshot:
+        del item_meta_by_product_id
         self.update_calls.append((token.access_token, items))
         return self.get_cart(token)
 
@@ -121,6 +136,15 @@ class FakeCheckoutReferenceRepository:
 
 
 class CheckoutToolsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._base_url_patcher = patch.dict(
+            os.environ,
+            {"APTEKA_BASE_URL": "https://stage.apteka.md"},
+            clear=False,
+        )
+        self._base_url_patcher.start()
+        self.addCleanup(self._base_url_patcher.stop)
+
     def tearDown(self) -> None:
         _clear_checkout_reference_cache()
 

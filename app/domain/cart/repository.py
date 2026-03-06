@@ -16,11 +16,22 @@ class CartApiRepository(Protocol):
     def get_cart(self, token: CartToken) -> CartSnapshot:
         """Fetch current cart snapshot for token."""
 
-    def add_item(self, token: CartToken, *, product_id: str, quantity: int) -> CartSnapshot:
+    def add_item(
+        self,
+        token: CartToken,
+        *,
+        product_id: str,
+        quantity: int,
+        item_meta: dict[str, object] | None = None,
+    ) -> CartSnapshot:
         """Increment item quantity in cart and return updated snapshot."""
 
     def update_items(
-        self, token: CartToken, *, items: list[tuple[str, int]]
+        self,
+        token: CartToken,
+        *,
+        items: list[tuple[str, int]],
+        item_meta_by_product_id: dict[str, dict[str, object]] | None = None,
     ) -> CartSnapshot:
         """Apply absolute quantities for provided items and return updated snapshot."""
 
