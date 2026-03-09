@@ -470,6 +470,25 @@ class MCPServerTests(unittest.TestCase):
                 "https://cdn.jsdelivr.net",
             ],
         )
+
+    def test_resources_read_inlines_products_local_assets_for_mcp_app(self) -> None:
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 4021,
+                "method": "resources/read",
+                "params": {"uri": "ui://widget/products.html"},
+            },
+        )
+        self.assertIn("result", response)
+        contents = response["result"]["contents"]
+        products_html = contents[0]["text"]
+        self.assertNotIn('href="./styles/widget-products.css"', products_html)
+        self.assertNotIn('src="./scripts/products.js"', products_html)
+        self.assertIn("<style>", products_html)
+        self.assertIn("grid-template-columns: repeat(3, minmax(0, 1fr));", products_html)
+        self.assertIn("<script>", products_html)
+        self.assertIn('const LOCAL_CART_KEY = "apteka_widget_cart";', products_html)
         self.assertEqual(
             contents[0]["_meta"]["openai/widgetCSP"]["connect_domains"],
             [get_apteka_base_url()],
