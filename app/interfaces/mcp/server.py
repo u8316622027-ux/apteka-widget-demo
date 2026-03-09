@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import threading
 from functools import lru_cache
 from http import HTTPStatus
@@ -40,6 +41,14 @@ TRACKING_RESPONSE_CACHE_TTL_SECONDS = 10.0
 TOOL_RESPONSE_CACHE_MAX_ENTRIES = 256
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+_WIDGET_CSS_LINK_PATTERN = re.compile(
+    r"""<link\s+[^>]*?href=(["'])(\./[^"']+?\.css)\1[^>]*?>""",
+    flags=re.IGNORECASE,
+)
+_WIDGET_SCRIPT_SRC_PATTERN = re.compile(
+    r"""<script\s+[^>]*?src=(["'])(\./[^"']+?\.js)\1[^>]*?>\s*</script>""",
+    flags=re.IGNORECASE,
+)
 _TOOL_RESPONSE_CACHE_LOCK = threading.Lock()
 _TOOL_RESPONSE_CACHE: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
 _RUNTIME_METRICS_LOCK = threading.Lock()
@@ -391,6 +400,7 @@ def handle_rpc_request(
             html_text = file_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return _rpc_error(request_id, -32602, f"Resource not found: {normalized_uri}")
+        html_text = _inline_local_widget_assets(html_text, widget_dir=file_path.parent)
 
         return {
             "jsonrpc": "2.0",
@@ -777,6 +787,34 @@ def _build_tool_success_text(result_payload: dict[str, Any]) -> str:
     if "status" in result_payload:
         summary["status"] = result_payload.get("status")
     return json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+
+
+def _inline_local_widget_assets(html_text: str, *, widget_dir: Path) -> str:
+    def _read_local_asset(relative_path: str) -> str | None:
+        normalized_relative = relative_path.lstrip("./")
+        candidate = (widget_dir / normalized_relative).resolve()
+        widget_root = widget_dir.resolve()
+        if candidate == widget_root or widget_root not in candidate.parents:
+            return None
+        try:
+            return candidate.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+
+    def _replace_css(match: re.Match[str]) -> str:
+        asset_text = _read_local_asset(match.group(2))
+        if asset_text is None:
+            return match.group(0)
+        return f"<style>\n{asset_text}\n</style>"
+
+    def _replace_js(match: re.Match[str]) -> str:
+        asset_text = _read_local_asset(match.group(2))
+        if asset_text is None:
+            return match.group(0)
+        return f"<script>\n{asset_text}\n</script>"
+
+    with_inlined_css = _WIDGET_CSS_LINK_PATTERN.sub(_replace_css, html_text)
+    return _WIDGET_SCRIPT_SRC_PATTERN.sub(_replace_js, with_inlined_css)
 
 
 def _resolve_http_request_id(incoming_request_id: str | None) -> str:
