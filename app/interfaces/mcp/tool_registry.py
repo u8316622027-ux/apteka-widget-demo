@@ -191,7 +191,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "properties": {"cart_session_id": {"type": "string"}},
             },
             handler=_my_cart_handler,
-            output_template="ui://widget/my-cart.html",
+            output_template="ui://widget/products.html",
             ui=widget_ui_config,
         ),
         "set_widget_theme": ToolDefinition(

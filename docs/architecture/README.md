@@ -33,9 +33,7 @@
 
 ## Widget Routing
 - Основной Apps SDK widget template: `ui://widget/products.html`.
-- Отдельный cart widget template: `ui://widget/my-cart.html`.
-- `search_products`, `add_to_my_cart`, `checkout_order` и `track_order_status_ui` используют `ui://widget/products.html` и передают целевую внутреннюю страницу через `widget.open.page`.
-- `my_cart` использует отдельный widget template `ui://widget/my-cart.html`, но читает ту же cart session и тот же локальный cart-state, что и search UI.
+- `search_products`, `add_to_my_cart`, `my_cart`, `checkout_order` и `track_order_status_ui` используют один и тот же widget и передают целевую внутреннюю страницу через `widget.open.page`.
 - `track_order_status_ui` открывает внутреннюю страницу `tracking` внутри `products.html`.
 - `support_knowledge_search` и `set_widget_theme` работают без отдельного widget template.
 
