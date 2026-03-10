@@ -152,6 +152,19 @@ def _map_product(item: dict[str, Any]) -> ProductSummary:
             discount_price = None
 
     image_url = _extract_image_url(item)
+    product_url = item.get("url") or item.get("product_url") or item.get("productUrl")
+    slug_ro = None
+    slug_ru = None
+    meta = item.get("meta")
+    if isinstance(meta, dict):
+        meta_translations = meta.get("translations")
+        if isinstance(meta_translations, dict):
+            meta_ro = meta_translations.get("ro")
+            meta_ru = meta_translations.get("ru")
+            if isinstance(meta_ro, dict):
+                slug_ro = meta_ro.get("slug") or meta_ro.get("product_slug") or meta_ro.get("productSlug")
+            if isinstance(meta_ru, dict):
+                slug_ru = meta_ru.get("slug") or meta_ru.get("product_slug") or meta_ru.get("productSlug")
     return ProductSummary(
         id=product_id,
         name_ro=str(name_ro) if name_ro else (fallback_name or None),
@@ -164,6 +177,9 @@ def _map_product(item: dict[str, Any]) -> ProductSummary:
         description_ro=str(description_ro) if description_ro else (str(raw_description) if raw_description else None),
         description_ru=str(description_ru) if description_ru else (str(raw_description) if raw_description else None),
         image_url=str(image_url) if image_url else None,
+        product_url=str(product_url) if product_url else None,
+        slug_ro=str(slug_ro) if slug_ro else None,
+        slug_ru=str(slug_ru) if slug_ru else None,
     )
 
 

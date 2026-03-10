@@ -20,3 +20,6 @@ class ProductSummary:
     description_ro: str | None
     description_ru: str | None
     image_url: str | None
+    product_url: str | None
+    slug_ro: str | None
+    slug_ru: str | None

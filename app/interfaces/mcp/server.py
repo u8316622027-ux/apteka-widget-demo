@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from collections import OrderedDict
 import gzip
-import hashlib
 import json
 import logging
 import os
@@ -21,23 +20,19 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from app.core.config import get_settings
+from app.interfaces.mcp import tool_registry as tool_registry_module
 from app.interfaces.mcp.tool_registry import (
     ToolDefinition,
     create_tool_registry as _create_tool_registry_base,
     decorate_tool_result,
     serialize_tool_definition,
 )
-from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
-from app.interfaces.mcp.tools.checkout_tools import checkout_order
 from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
-from app.interfaces.mcp.tools.shared_context import normalize_cart_session_id
-from app.interfaces.mcp.tools.tracking_tools import track_order_status_ui
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 MIN_GZIP_BYTES = 512
 TOOL_RESPONSE_CACHE_TTL_SECONDS = 30.0
-TRACKING_RESPONSE_CACHE_TTL_SECONDS = 10.0
 TOOL_RESPONSE_CACHE_MAX_ENTRIES = 256
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -68,50 +63,6 @@ def _search_products_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     return search_products(query, limit=limit)
 
 
-def _my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    cart_session_id = arguments.get("cart_session_id")
-    return my_cart(cart_session_id=str(cart_session_id) if cart_session_id is not None else None)
-
-
-def _add_to_my_cart_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    product_id_value = arguments.get("product_id")
-    product_id = str(product_id_value) if product_id_value is not None else None
-    quantity_value = arguments.get("quantity")
-    quantity = int(quantity_value) if quantity_value is not None else None
-    items_value = arguments.get("items")
-    items = items_value if isinstance(items_value, list) else None
-    cart_session_id = arguments.get("cart_session_id")
-    name = arguments.get("name")
-    price = arguments.get("price")
-    discount_price = arguments.get("discount_price")
-    manufacturer = arguments.get("manufacturer")
-    image_url = arguments.get("image_url")
-    use_add_endpoint = bool(arguments.get("use_add_endpoint")) if isinstance(
-        arguments.get("use_add_endpoint"), bool
-    ) else False
-    return add_to_my_cart(
-        product_id=product_id,
-        quantity=quantity,
-        items=items,
-        cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
-        use_add_endpoint=use_add_endpoint,
-        name=str(name) if isinstance(name, str) else None,
-        price=float(price) if isinstance(price, (int, float)) and not isinstance(price, bool) else None,
-        discount_price=(
-            float(discount_price)
-            if isinstance(discount_price, (int, float)) and not isinstance(discount_price, bool)
-            else None
-        ),
-        manufacturer=str(manufacturer) if isinstance(manufacturer, str) else None,
-        image_url=str(image_url) if isinstance(image_url, str) else None,
-    )
-
-
-def _track_order_status_ui_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    lookup = str(arguments.get("lookup", ""))
-    return track_order_status_ui(lookup)
-
-
 def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     query = str(arguments.get("query", ""))
     limit_value = arguments.get("limit")
@@ -119,50 +70,16 @@ def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, An
     return faq_search(query, limit=limit)
 
 
-def _checkout_order_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    cart_session_id = arguments.get("cart_session_id")
-    delivery_method = arguments.get("delivery_method")
-    pickup_region_id = arguments.get("pickup_region_id")
-    pickup_region_name = arguments.get("pickup_region_name")
-    pickup_city_id = arguments.get("pickup_city_id")
-    pickup_city_name = arguments.get("pickup_city_name")
-    pickup_pharmacy_id = arguments.get("pickup_pharmacy_id")
-    pickup_pharmacy_name = arguments.get("pickup_pharmacy_name")
-    pickup_contact = arguments.get("pickup_contact")
-    courier_contact = arguments.get("courier_contact")
-    courier_address = arguments.get("courier_address")
-    payment_method = arguments.get("payment_method")
-    dont_call_me = arguments.get("dont_call_me")
-    terms_accepted = arguments.get("terms_accepted")
-    comment = arguments.get("comment")
-    return checkout_order(
-        cart_session_id=str(cart_session_id) if cart_session_id is not None else None,
-        delivery_method=str(delivery_method) if delivery_method is not None else None,
-        pickup_region_id=pickup_region_id,
-        pickup_region_name=str(pickup_region_name) if pickup_region_name is not None else None,
-        pickup_city_id=pickup_city_id,
-        pickup_city_name=str(pickup_city_name) if pickup_city_name is not None else None,
-        pickup_pharmacy_id=pickup_pharmacy_id,
-        pickup_pharmacy_name=str(pickup_pharmacy_name) if pickup_pharmacy_name is not None else None,
-        pickup_contact=pickup_contact if isinstance(pickup_contact, dict) else None,
-        courier_contact=courier_contact if isinstance(courier_contact, dict) else None,
-        courier_address=courier_address if isinstance(courier_address, dict) else None,
-        payment_method=str(payment_method) if payment_method is not None else None,
-        dont_call_me=bool(dont_call_me) if isinstance(dont_call_me, bool) else None,
-        terms_accepted=bool(terms_accepted) if isinstance(terms_accepted, bool) else None,
-        comment=str(comment) if comment is not None else None,
-    )
+def _set_widget_theme_handler(arguments: dict[str, Any]) -> dict[str, Any]:
+    return tool_registry_module._set_widget_theme_handler(arguments)
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
     registry = _create_tool_registry_base()
     handler_by_name: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
         "search_products": _search_products_handler,
-        "add_to_my_cart": _add_to_my_cart_handler,
-        "checkout_order": _checkout_order_handler,
         "support_knowledge_search": _support_knowledge_search_handler,
-        "my_cart": _my_cart_handler,
-        "track_order_status_ui": _track_order_status_ui_handler,
+        "set_widget_theme": _set_widget_theme_handler,
     }
     remapped: dict[str, ToolDefinition] = {}
     for name, tool in registry.items():
@@ -192,28 +109,7 @@ def _get_default_tools_list_payload() -> dict[str, Any]:
 
 
 def _tool_uses_cart_session(tool_name: str) -> bool:
-    return tool_name in {"my_cart", "add_to_my_cart", "checkout_order"}
-
-
-def _derive_cart_session_id_from_subject(subject: str | None) -> str | None:
-    if subject is None:
-        return None
-    normalized_subject = subject.strip()
-    if not normalized_subject:
-        return None
-    digest = hashlib.sha256(f"cart:v1:{normalized_subject}".encode("utf-8")).hexdigest()
-    return digest
-
-
-def _extract_openai_subject_from_params(params: dict[str, Any]) -> str | None:
-    meta = params.get("_meta")
-    if not isinstance(meta, dict):
-        return None
-    value = meta.get("openai/subject")
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
+    return False
 
 
 def _resolve_tool_arguments_with_cart_session_fallback(
@@ -222,31 +118,9 @@ def _resolve_tool_arguments_with_cart_session_fallback(
     arguments: dict[str, Any],
     params: dict[str, Any],
 ) -> dict[str, Any]:
-    if not _tool_uses_cart_session(tool_name):
-        return arguments
-
-    incoming_session_id = normalize_cart_session_id(arguments.get("cart_session_id"))
-    if incoming_session_id is not None:
-        resolved_arguments = dict(arguments)
-        resolved_arguments["cart_session_id"] = incoming_session_id
-        return resolved_arguments
-
-    subject = _extract_openai_subject_from_params(params)
-    derived_session_id = _derive_cart_session_id_from_subject(subject)
-    if derived_session_id is None:
-        return arguments
-
-    resolved_arguments = dict(arguments)
-    resolved_arguments["cart_session_id"] = derived_session_id
-    logger.debug(
-        "mcp_cart_session_resolved_from_subject",
-        extra={
-            "tool_name": tool_name,
-            "cart_session_source": "openai_subject_hash",
-            "cart_session_id_prefix": derived_session_id[:12],
-        },
-    )
-    return resolved_arguments
+    del tool_name
+    del params
+    return arguments
 
 
 def _reset_server_caches_for_tests() -> None:
@@ -734,20 +608,14 @@ def _get_tool_cache_ttl_seconds(tool_name: str) -> float | None:
 def _get_tool_cache_config() -> dict[str, Any]:
     settings = get_settings()
     search_ttl = float(getattr(settings, "mcp_search_cache_ttl_seconds", TOOL_RESPONSE_CACHE_TTL_SECONDS))
-    tracking_ttl = float(
-        getattr(settings, "mcp_tracking_cache_ttl_seconds", TRACKING_RESPONSE_CACHE_TTL_SECONDS)
-    )
     max_entries = int(getattr(settings, "mcp_tool_cache_max_entries", TOOL_RESPONSE_CACHE_MAX_ENTRIES))
     if search_ttl <= 0:
         search_ttl = TOOL_RESPONSE_CACHE_TTL_SECONDS
-    if tracking_ttl <= 0:
-        tracking_ttl = TRACKING_RESPONSE_CACHE_TTL_SECONDS
     if max_entries <= 0:
         max_entries = TOOL_RESPONSE_CACHE_MAX_ENTRIES
     return {
         "ttl_by_tool_name": {
             "search_products": search_ttl,
-            "track_order_status_ui": tracking_ttl,
         },
         "max_entries": max_entries,
     }

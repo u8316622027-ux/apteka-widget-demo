@@ -31,13 +31,20 @@
                 </svg>
               </button>
             </label>
-            <button class="cart-icon" aria-label="Корзина" id="products-cart-button">
-              <svg class="products-icon products-icon--cart" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="9" cy="20" r="1.5"></circle>
-                <circle cx="18" cy="20" r="1.5"></circle>
-                <path d="M2 3h2l2.4 11.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.5L21 7H7"></path>
+            <button
+              class="support-button"
+              id="products-support-button"
+              type="button"
+              aria-label="Поддержка"
+              aria-controls="products-support-popup"
+              aria-expanded="false"
+            >
+              <svg class="products-icon products-icon--headset" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 13a8 8 0 0 1 16 0"></path>
+                <rect x="3.5" y="12" width="4" height="6" rx="1.5"></rect>
+                <rect x="16.5" y="12" width="4" height="6" rx="1.5"></rect>
+                <path d="M20.5 18.5a3.5 3.5 0 0 1-3.5 3.5H13"></path>
               </svg>
-              <span class="cart-badge" id="products-cart-badge" hidden>0</span>
             </button>
           </section>
 
@@ -62,114 +69,6 @@
               </button>
             </div>
           </div>
-
-        <div class="carousel-bottom">
-            <div class="center-indicator" aria-label="Доставка">
-              <svg class="products-icon products-icon--truck" viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="1.5" y="6.5" width="12" height="9" rx="1.5"></rect>
-                <path d="M13.5 9h4l3 3v3.5h-7"></path>
-                <circle cx="6" cy="17.5" r="1.6"></circle>
-                <circle cx="18" cy="17.5" r="1.6"></circle>
-              </svg>
-            </div>
-            <button
-              class="center-indicator center-indicator-button"
-              id="products-support-button"
-              type="button"
-              aria-label="Поддержка"
-              aria-controls="products-support-popup"
-              aria-expanded="false"
-            >
-              <svg class="products-icon products-icon--headset" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 13a8 8 0 0 1 16 0"></path>
-                <rect x="3.5" y="12" width="4" height="6" rx="1.5"></rect>
-                <rect x="16.5" y="12" width="4" height="6" rx="1.5"></rect>
-                <path d="M20.5 18.5a3.5 3.5 0 0 1-3.5 3.5H13"></path>
-              </svg>
-            </button>
-          </div>
-
-        <div class="cart-modal-overlay" id="products-cart-modal" hidden>
-            <section class="cart-modal" role="dialog" aria-modal="true" aria-labelledby="products-cart-title">
-              <header class="cart-modal-header">
-                <h2 class="cart-modal-title" id="products-cart-title">Корзина</h2>
-                <button class="cart-modal-close" id="products-cart-close" aria-label="Закрыть">×</button>
-              </header>
-              <div class="cart-modal-items" id="products-cart-items"></div>
-              <footer class="cart-modal-footer">
-                <p class="cart-modal-total" id="products-cart-total">Итого: 0.00 MDL</p>
-                <div class="cart-modal-actions">
-                  <button class="cart-modal-action" id="products-go-to-cart-button" type="button">Перейти в корзину</button>
-              <button class="cart-modal-action cart-modal-action--primary" id="products-checkout-button" type="button">Оформить заказ</button>
-                </div>
-              </footer>
-            </section>
-          </div>
-        </section>
-
-        <section class="products-page products-page-panel" id="products-page-my-cart" hidden>
-          <header class="products-page-header">
-            <button class="products-page-back" id="products-back-from-my-cart" type="button">Назад</button>
-            <h2 class="products-page-title">Моя корзина</h2>
-          </header>
-          <div class="products-page-cart-items" id="products-page-cart-items"></div>
-          <footer class="products-page-footer">
-            <p class="products-page-total" id="products-page-cart-total">Итого: 0.00 MDL</p>
-            <div class="products-page-actions">
-              <button class="products-page-action" id="products-page-cart-continue" type="button">Продолжить покупки</button>
-              <button class="products-page-action products-page-action--primary" id="products-page-cart-checkout-button" type="button">
-                Оформить заказ
-              </button>
-            </div>
-          </footer>
-        </section>
-
-        <section class="products-page products-page-panel" id="products-page-checkout" hidden>
-          <header class="products-page-header">
-            <button class="products-page-back" id="products-back-from-checkout" type="button">Назад</button>
-            <h2 class="products-page-title">Оформление заказа</h2>
-          </header>
-          <div class="products-checkout-summary">
-            <div class="products-page-cart-items" id="products-checkout-items"></div>
-            <p class="products-page-total" id="products-checkout-total">Итого: 0.00 MDL</p>
-          </div>
-          <form class="products-checkout-form" id="products-checkout-form">
-            <label class="products-checkout-field">
-              <span>Имя</span>
-              <input id="products-checkout-name" type="text" autocomplete="name" required />
-            </label>
-            <label class="products-checkout-field">
-              <span>Телефон</span>
-              <input id="products-checkout-phone" type="tel" autocomplete="tel" required />
-            </label>
-            <label class="products-checkout-field">
-              <span>Комментарий</span>
-              <textarea id="products-checkout-notes" rows="3"></textarea>
-            </label>
-            <button class="products-page-action products-page-action--primary" id="products-checkout-submit" type="submit">
-              Подтвердить заказ
-            </button>
-          </form>
-        </section>
-
-        <section class="products-page products-page-panel" id="products-page-tracking" hidden>
-          <header class="products-page-header">
-            <button class="products-page-back" id="products-back-from-tracking" type="button">Назад</button>
-            <h2 class="products-page-title">Статус заказа</h2>
-          </header>
-          <div class="products-tracking-summary">
-            <p class="products-tracking-lookup" id="products-tracking-lookup"></p>
-            <p class="products-tracking-count" id="products-tracking-count"></p>
-          </div>
-          <div class="products-tracking-orders" id="products-tracking-orders"></div>
-        </section>
-
-        <div
-          class="products-toast-layer"
-          id="products-toast-layer"
-          aria-live="polite"
-          aria-atomic="true"
-        ></div>
 
         <div class="products-support-layer" id="products-support-layer" hidden>
           <section
@@ -246,7 +145,7 @@
     <script src="./scripts/products-render.js"></script>
     <script src="./scripts/products-tools.js"></script>
     <script src="./scripts/products-support.js"></script>
-    <script src="./scripts/products-toast.js"></script>
+    <script src="./scripts/products-theme.js"></script>
     <script src="./scripts/products.js"></script>
   </body>
 </html>
