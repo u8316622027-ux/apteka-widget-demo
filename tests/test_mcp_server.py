@@ -170,7 +170,7 @@ class MCPServerTests(unittest.TestCase):
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
         )
 
-    def test_tools_list_uses_products_widget_for_cart_and_checkout_tools(self) -> None:
+    def test_tools_list_uses_standalone_cart_widget_and_products_checkout_widget(self) -> None:
         registry = create_tool_registry()
 
         response = handle_rpc_request(
@@ -179,11 +179,11 @@ class MCPServerTests(unittest.TestCase):
         )
 
         tool_by_name = {tool["name"]: tool for tool in response["result"]["tools"]}
-        self.assertEqual(tool_by_name["my_cart"]["outputTemplate"], "ui://widget/products.html")
+        self.assertEqual(tool_by_name["my_cart"]["outputTemplate"], "ui://widget/my-cart.html")
         self.assertEqual(tool_by_name["checkout_order"]["outputTemplate"], "ui://widget/products.html")
         self.assertEqual(
             tool_by_name["my_cart"]["_meta"]["openai/outputTemplate"],
-            "ui://widget/products.html",
+            "ui://widget/my-cart.html",
         )
         self.assertEqual(
             tool_by_name["checkout_order"]["_meta"]["openai/outputTemplate"],
@@ -473,17 +473,23 @@ class MCPServerTests(unittest.TestCase):
         )
         self.assertIn("result", response)
         resources = response["result"]["resources"]
-        self.assertEqual(len(resources), 1)
+        self.assertEqual(len(resources), 2)
         products_resource = next(
             resource for resource in resources if resource["uri"] == "ui://widget/products.html"
         )
+        my_cart_resource = next(
+            resource for resource in resources if resource["uri"] == "ui://widget/my-cart.html"
+        )
         self.assertEqual(products_resource["mimeType"], "text/html;profile=mcp-app")
+        self.assertEqual(my_cart_resource["mimeType"], "text/html;profile=mcp-app")
         self.assertIn("_meta", products_resource)
+        self.assertIn("_meta", my_cart_resource)
         self.assertEqual(
             products_resource["_meta"]["openai/widgetDomain"],
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
         )
         self.assertIn("openai/widgetCSP", products_resource["_meta"])
+        self.assertIn("openai/widgetCSP", my_cart_resource["_meta"])
 
     def test_resources_read_returns_products_template_content(self) -> None:
         response = handle_rpc_request(
@@ -536,6 +542,41 @@ class MCPServerTests(unittest.TestCase):
             contents[0]["_meta"]["openai/widgetCSP"]["connect_domains"],
             [get_apteka_base_url()],
         )
+
+    def test_resources_read_returns_my_cart_template_content(self) -> None:
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 4022,
+                "method": "resources/read",
+                "params": {"uri": "ui://widget/my-cart.html"},
+            },
+        )
+        self.assertIn("result", response)
+        contents = response["result"]["contents"]
+        self.assertEqual(contents[0]["uri"], "ui://widget/my-cart.html")
+        self.assertEqual(contents[0]["mimeType"], "text/html;profile=mcp-app")
+        self.assertIn("my-cart-shell", contents[0]["text"])
+        self.assertIn("Корзина покупок", contents[0]["text"])
+
+    def test_resources_read_inlines_my_cart_local_assets_for_mcp_app(self) -> None:
+        response = handle_rpc_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 4023,
+                "method": "resources/read",
+                "params": {"uri": "ui://widget/my-cart.html"},
+            },
+        )
+        self.assertIn("result", response)
+        contents = response["result"]["contents"]
+        my_cart_html = contents[0]["text"]
+        self.assertNotIn('href="./styles/widget-my-cart.css"', my_cart_html)
+        self.assertNotIn('src="./scripts/my-cart.js"', my_cart_html)
+        self.assertIn("<style>", my_cart_html)
+        self.assertIn("width: min(100%, 920px);", my_cart_html)
+        self.assertIn("<script>", my_cart_html)
+        self.assertIn('const LOCAL_CART_KEY = "apteka_widget_cart";', my_cart_html)
 
 
     def test_tools_call_requires_string_name(self) -> None:
@@ -909,7 +950,7 @@ class MCPServerTests(unittest.TestCase):
         self.assertEqual(response["result"]["structuredContent"]["cart_session_id"], "sess-1")
         self.assertEqual(
             response["result"]["structuredContent"]["widget"]["open"]["template"],
-            "ui://widget/products.html",
+            "ui://widget/my-cart.html",
         )
 
     def test_tools_call_add_to_my_cart_delegates_to_cart_tool(self) -> None:

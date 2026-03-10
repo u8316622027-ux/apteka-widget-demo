@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Моя корзина</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="./styles/widget-my-cart.css" />
+  </head>
+  <body x-data="{ tool: 'my_cart' }">
+    <main class="widget-shell my-cart-shell" data-widget-shell="my_cart">
+      <section class="my-cart-frame" aria-labelledby="my-cart-title">
+        <header class="my-cart-header">
+          <h1 class="my-cart-title" id="my-cart-title">Корзина покупок</h1>
+        </header>
+
+        <div class="my-cart-items" id="my-cart-items" aria-live="polite"></div>
+
+        <footer class="my-cart-footer">
+          <p class="my-cart-total" id="my-cart-total">Итого: 0.00 MDL</p>
+          <div class="my-cart-actions">
+            <button class="my-cart-action" id="my-cart-back-button" type="button">Назад</button>
+            <button class="my-cart-action my-cart-action--primary" id="my-cart-checkout-button" type="button">
+              Оформить заказ
+            </button>
+          </div>
+        </footer>
+      </section>
+    </main>
+    <script src="./scripts/my-cart-state.js"></script>
+    <script src="./scripts/my-cart-render.js"></script>
+    <script src="./scripts/my-cart.js"></script>
+  </body>
+</html>

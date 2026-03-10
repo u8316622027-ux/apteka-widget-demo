@@ -35,10 +35,37 @@ class WidgetTemplateTests(unittest.TestCase):
 
         return "\n".join(bundle_parts)
 
+    @staticmethod
+    def _read_my_cart_bundle_text() -> str:
+        html_path = Path("app/widgets/my-cart.html")
+        html_text = html_path.read_text(encoding="utf-8")
+        bundle_parts = [html_text]
+
+        css_paths = [
+            match
+            for match in re.findall(r'href="(\./styles/[^"]+\.css)"', html_text)
+            if match.startswith("./styles/")
+        ]
+        for css_rel_path in css_paths:
+            css_path = html_path.parent / css_rel_path.removeprefix("./")
+            bundle_parts.append(css_path.read_text(encoding="utf-8"))
+
+        js_paths = [
+            match
+            for match in re.findall(r'src="(\./scripts/[^"]+\.js)"', html_text)
+            if match.startswith("./scripts/")
+        ]
+        for js_rel_path in js_paths:
+            js_path = html_path.parent / js_rel_path.removeprefix("./")
+            bundle_parts.append(js_path.read_text(encoding="utf-8"))
+
+        return "\n".join(bundle_parts)
+
     def test_all_tool_templates_exist(self) -> None:
         widget_dir = Path("app/widgets")
         expected_templates = {
             "products.html",
+            "my-cart.html",
         }
         existing_templates = {path.name for path in widget_dir.glob("*.html")}
         for template_name in expected_templates:
@@ -48,13 +75,14 @@ class WidgetTemplateTests(unittest.TestCase):
         widget_dir = Path("app/widgets")
         template_names = (
             "products.html",
+            "my-cart.html",
         )
         for template_name in template_names:
             template_text = (widget_dir / template_name).read_text(encoding="utf-8")
             if template_name == "products.html":
                 self.assertNotIn("tailwind.css", template_text)
             else:
-                self.assertIn("tailwind.css", template_text)
+                self.assertNotIn("tailwind.css", template_text)
             self.assertIn("data-widget-shell=", template_text)
             self.assertIn("x-data=", template_text)
             self.assertIn("alpinejs", template_text)
@@ -135,6 +163,16 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertNotIn("<style>", template_text)
         self.assertNotIn("<script>", template_text)
 
+    def test_my_cart_template_uses_external_assets(self) -> None:
+        html_text = Path("app/widgets/my-cart.html").read_text(encoding="utf-8")
+        self.assertIn('href="./styles/widget-my-cart.css"', html_text)
+        self.assertIn('src="./scripts/my-cart-state.js"', html_text)
+        self.assertIn('src="./scripts/my-cart-render.js"', html_text)
+        self.assertIn('src="./scripts/my-cart.js"', html_text)
+        template_text = self._read_my_cart_bundle_text()
+        self.assertNotIn("<style>", template_text)
+        self.assertNotIn("<script>", template_text)
+
     def test_products_widget_assets_exist(self) -> None:
         self.assertTrue(Path("app/widgets/styles/widget-products.css").exists())
         self.assertTrue(Path("app/widgets/scripts/state.js").exists())
@@ -144,9 +182,14 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertTrue(Path("app/widgets/scripts/products-toast.js").exists())
         self.assertTrue(Path("app/widgets/scripts/products.js").exists())
 
+    def test_my_cart_widget_assets_exist(self) -> None:
+        self.assertTrue(Path("app/widgets/styles/widget-my-cart.css").exists())
+        self.assertTrue(Path("app/widgets/scripts/my-cart-state.js").exists())
+        self.assertTrue(Path("app/widgets/scripts/my-cart-render.js").exists())
+        self.assertTrue(Path("app/widgets/scripts/my-cart.js").exists())
+
     def test_legacy_cart_templates_are_removed(self) -> None:
         self.assertFalse(Path("app/widgets/add-to-my-cart.html").exists())
-        self.assertFalse(Path("app/widgets/my-cart.html").exists())
         self.assertFalse(Path("app/widgets/checkout.html").exists())
         self.assertFalse(Path("app/widgets/faq.html").exists())
         self.assertFalse(Path("app/widgets/theme.html").exists())
@@ -483,7 +526,7 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("const replacePrevious = structuredPayload?.widget?.open?.replace_previous !== false;", template_text)
         self.assertIn("await openaiApi.openWidget(fallbackTemplate, { replace_previous: replacePrevious });", template_text)
         self.assertIn("await openaiApi.openWidget(template, { replace_previous: true });", template_text)
-        self.assertIn('openWidgetByTemplate("ui://widget/products.html", "my_cart", {', template_text)
+        self.assertIn('openWidgetByTemplate("ui://widget/my-cart.html", "my_cart", {', template_text)
         self.assertIn('openWidgetByTemplate("ui://widget/products.html", "checkout_order", {', template_text)
         self.assertIn("cart_session_id: cartSessionId || undefined", template_text)
         self.assertIn("goToCartButton.addEventListener(\"click\",", template_text)
@@ -624,6 +667,25 @@ class WidgetTemplateTests(unittest.TestCase):
         template_text = self._read_products_bundle_text()
         self.assertIn("use_add_endpoint: true", template_text)
         self.assertIn('window.openai.callTool("add_to_my_cart", payload)', template_text)
+
+    def test_my_cart_template_matches_requested_layout(self) -> None:
+        template_text = self._read_my_cart_bundle_text()
+        self.assertIn("my-cart-shell", template_text)
+        self.assertIn('class="my-cart-title"', template_text)
+        self.assertIn('id="my-cart-items"', template_text)
+        self.assertIn('id="my-cart-total"', template_text)
+        self.assertIn('id="my-cart-back-button"', template_text)
+        self.assertIn('id="my-cart-checkout-button"', template_text)
+        self.assertIn("window.openai.callTool(\"my_cart\"", template_text)
+        self.assertIn("window.openai.callTool(\"add_to_my_cart\"", template_text)
+        self.assertIn('window.openai.openWidget("ui://widget/products.html"', template_text)
+        self.assertIn('window.openai.openWidget("ui://widget/products.html", { replace_previous: true })', template_text)
+
+    def test_my_cart_template_uses_same_widget_shell_size_as_products(self) -> None:
+        template_text = self._read_my_cart_bundle_text().replace(" ", "")
+        self.assertIn("width:min(100%,920px)", template_text)
+        self.assertIn("padding:14px10px18px", template_text)
+        self.assertIn("@media(max-width:620px)", template_text)
 
     def test_products_template_uses_loading_blur_overlay(self) -> None:
         template_text = self._read_products_bundle_text()

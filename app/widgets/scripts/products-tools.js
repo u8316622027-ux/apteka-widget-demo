@@ -1,5 +1,6 @@
 ﻿(function () {
   const attach = (ctx) => {
+    const LAST_SEARCH_QUERY_KEY = "apteka_widget_last_query";
     const { state, dom, constants, utils, cart, sync } = ctx;
     const { input, cartModal } = dom;
     const { INITIAL_PAYLOAD_WAIT_MS, INITIAL_PAYLOAD_POLL_MS } = constants;
@@ -289,6 +290,13 @@
         };
       }
       const query = normalizeText(payload.query);
+      if (query) {
+        try {
+          window.localStorage.setItem(LAST_SEARCH_QUERY_KEY, query);
+        } catch (_error) {
+          // ignore storage write errors
+        }
+      }
       const isSearchPayload = hasSearchResultsPayload(payload) || !requestedPage || requestedPage === "search";
       if (isSearchPayload) {
         const mapped = extractItems(payload).map(mapProduct).filter((product) => product.id);
@@ -370,6 +378,11 @@
 
       state.isSearching = true;
       state.lastQuery = normalized;
+      try {
+        window.localStorage.setItem(LAST_SEARCH_QUERY_KEY, normalized);
+      } catch (_error) {
+        // ignore storage write errors
+      }
       setLoading(true);
 
       try {

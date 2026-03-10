@@ -408,7 +408,7 @@
         cartSessionId: cartSessionId || null,
       });
       ui.toggleCartModal(false);
-      void openWidgetByTemplate("ui://widget/products.html", "my_cart", {
+      void openWidgetByTemplate("ui://widget/my-cart.html", "my_cart", {
         cart_session_id: cartSessionId || undefined,
         toolPage: "my-cart",
       });

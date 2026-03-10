@@ -3,6 +3,12 @@
 ## Goal
 Обеспечить устойчивую корзину пользователя для MCP tools (`my_cart`, `add_to_my_cart`) через серверную сессию `cart_session_id` и серверное хранение токена корзины.
 
+## Widget
+- `my_cart` открывает standalone widget template `ui://widget/my-cart.html`.
+- Кнопка корзины внутри search UI открывает тот же standalone template.
+- `my-cart.html` использует ту же cart session, локальные storage-ключи и те же MCP tools (`my_cart`, `add_to_my_cart`), что и search widget.
+- Размер shell выровнен с `products.html`, чтобы все tool widgets оставались визуально одинаковыми.
+
 ## User Flow
 1. UI или tool передает `cart_session_id` (если уже есть).
 2. Backend ищет `cart_session_id` в token-store.
