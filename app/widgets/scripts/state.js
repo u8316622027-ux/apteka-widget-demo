@@ -1,4 +1,4 @@
-(function () {
+(() => {
   const createContext = (root) => {
     const INITIAL_PAYLOAD_WAIT_MS = 5000;
     const INITIAL_PAYLOAD_POLL_MS = 140;
@@ -50,7 +50,9 @@
         // ignore logging storage errors
       }
       try {
-        const level = normalizeText(String(safePayload.level || "")).toLowerCase();
+        const level = normalizeText(
+          String(safePayload.level || ""),
+        ).toLowerCase();
         if (level === "error") {
           console.error("[products-widget]", name, safePayload);
           return;
@@ -196,19 +198,29 @@
         return payload.items.filter((item) => item && typeof item === "object");
       }
       if (Array.isArray(payload?.results)) {
-        return payload.results.filter((item) => item && typeof item === "object");
+        return payload.results.filter(
+          (item) => item && typeof item === "object",
+        );
       }
       if (Array.isArray(payload?.products)) {
-        return payload.products.filter((item) => item && typeof item === "object");
+        return payload.products.filter(
+          (item) => item && typeof item === "object",
+        );
       }
       if (Array.isArray(payload?.data?.items)) {
-        return payload.data.items.filter((item) => item && typeof item === "object");
+        return payload.data.items.filter(
+          (item) => item && typeof item === "object",
+        );
       }
       if (Array.isArray(payload?.data?.results)) {
-        return payload.data.results.filter((item) => item && typeof item === "object");
+        return payload.data.results.filter(
+          (item) => item && typeof item === "object",
+        );
       }
       if (Array.isArray(payload?.data?.products)) {
-        return payload.data.products.filter((item) => item && typeof item === "object");
+        return payload.data.products.filter(
+          (item) => item && typeof item === "object",
+        );
       }
       if (Array.isArray(payload)) {
         return payload.filter((item) => item && typeof item === "object");
@@ -218,9 +230,17 @@
 
     const mapProduct = (item) => {
       const itemTranslations =
-        typeof item.translations === "object" && item.translations ? item.translations : {};
-      const ro = typeof itemTranslations.ro === "object" && itemTranslations.ro ? itemTranslations.ro : {};
-      const ru = typeof itemTranslations.ru === "object" && itemTranslations.ru ? itemTranslations.ru : {};
+        typeof item.translations === "object" && item.translations
+          ? item.translations
+          : {};
+      const ro =
+        typeof itemTranslations.ro === "object" && itemTranslations.ro
+          ? itemTranslations.ro
+          : {};
+      const ru =
+        typeof itemTranslations.ru === "object" && itemTranslations.ru
+          ? itemTranslations.ru
+          : {};
       const name =
         normalizeText(item.name_ru) ||
         normalizeText(item.name_ro) ||
@@ -228,7 +248,8 @@
         normalizeText(ru.name) ||
         normalizeText(item.name) ||
         "Товар";
-      const manufacturer = normalizeText(item.manufacturer) || "Производитель не указан";
+      const manufacturer =
+        normalizeText(item.manufacturer) || "Производитель не указан";
 
       const priceRaw = item.price;
       const discountRaw = item.discountPrice ?? item.discount_price;
@@ -312,14 +333,16 @@
         normalizeText(item.link) ||
         normalizeText(item.permalink) ||
         normalizeText(item.slug);
-      const meta =
-        item.meta && typeof item.meta === "object" ? item.meta : {};
+      const meta = item.meta && typeof item.meta === "object" ? item.meta : {};
       const metaTranslations =
-        meta && typeof meta.translations === "object" && meta.translations ? meta.translations : {};
+        meta && typeof meta.translations === "object" && meta.translations
+          ? meta.translations
+          : {};
       const preferredLanguage = getPreferredLanguage();
       const fallbackLang = preferredLanguage === "ru" ? "ro" : "ru";
       const metaTranslationLang =
-        metaTranslations && typeof metaTranslations[preferredLanguage] === "object"
+        metaTranslations &&
+        typeof metaTranslations[preferredLanguage] === "object"
           ? metaTranslations[preferredLanguage]
           : {};
       const metaTranslationFallback =
@@ -327,11 +350,13 @@
           ? metaTranslations[fallbackLang]
           : {};
       const translationLang =
-        typeof itemTranslations[preferredLanguage] === "object" && itemTranslations[preferredLanguage]
+        typeof itemTranslations[preferredLanguage] === "object" &&
+        itemTranslations[preferredLanguage]
           ? itemTranslations[preferredLanguage]
           : {};
       const translationFallback =
-        typeof itemTranslations[fallbackLang] === "object" && itemTranslations[fallbackLang]
+        typeof itemTranslations[fallbackLang] === "object" &&
+        itemTranslations[fallbackLang]
           ? itemTranslations[fallbackLang]
           : {};
       const slug =

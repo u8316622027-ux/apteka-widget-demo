@@ -3,32 +3,31 @@
 from __future__ import annotations
 
 import argparse
-from collections import OrderedDict
 import gzip
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import threading
+from collections import OrderedDict
 from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from time import monotonic as _monotonic
 from time import perf_counter as _perf_counter
-from typing import Any, Callable
+from typing import Any, Mapping
 from uuid import uuid4
 
 from app.core.config import get_settings
-from app.interfaces.mcp import tool_registry as tool_registry_module
 from app.interfaces.mcp.tool_registry import (
     ToolDefinition,
-    create_tool_registry as _create_tool_registry_base,
     decorate_tool_result,
     serialize_tool_definition,
 )
-from app.interfaces.mcp.tools.faq_tools import faq_search
-from app.interfaces.mcp.tools.search_tools import search_products
+from app.interfaces.mcp.tool_registry import (
+    create_tool_registry as _create_tool_registry_base,
+)
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 MIN_GZIP_BYTES = 512
@@ -57,42 +56,8 @@ _RUNTIME_METRICS: dict[str, Any] = {
 }
 
 
-def _search_products_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    query = str(arguments.get("query", ""))
-    limit = int(arguments.get("limit", 10))
-    return search_products(query, limit=limit)
-
-
-def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    query = str(arguments.get("query", ""))
-    limit_value = arguments.get("limit")
-    limit = int(limit_value) if limit_value is not None else None
-    return faq_search(query, limit=limit)
-
-
-def _set_widget_theme_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    return tool_registry_module._set_widget_theme_handler(arguments)
-
-
 def create_tool_registry() -> dict[str, ToolDefinition]:
-    registry = _create_tool_registry_base()
-    handler_by_name: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
-        "search_products": _search_products_handler,
-        "support_knowledge_search": _support_knowledge_search_handler,
-        "set_widget_theme": _set_widget_theme_handler,
-    }
-    remapped: dict[str, ToolDefinition] = {}
-    for name, tool in registry.items():
-        handler = handler_by_name.get(name, tool.handler)
-        remapped[name] = ToolDefinition(
-            name=tool.name,
-            description=tool.description,
-            input_schema=tool.input_schema,
-            handler=handler,
-            output_template=tool.output_template,
-            ui=tool.ui,
-        )
-    return remapped
+    return _create_tool_registry_base()
 
 
 @lru_cache(maxsize=1)
@@ -103,27 +68,11 @@ def _get_default_tool_registry() -> dict[str, ToolDefinition]:
 @lru_cache(maxsize=1)
 def _get_default_tools_list_payload() -> dict[str, Any]:
     registry = _get_default_tool_registry()
-    return {
-        "tools": [serialize_tool_definition(tool) for tool in registry.values()]
-    }
-
-
-def _tool_uses_cart_session(tool_name: str) -> bool:
-    return False
-
-
-def _resolve_tool_arguments_with_cart_session_fallback(
-    *,
-    tool_name: str,
-    arguments: dict[str, Any],
-    params: dict[str, Any],
-) -> dict[str, Any]:
-    del tool_name
-    del params
-    return arguments
+    return {"tools": [serialize_tool_definition(tool) for tool in registry.values()]}
 
 
 def _reset_server_caches_for_tests() -> None:
+    get_settings.cache_clear()
     _get_default_tool_registry.cache_clear()
     _get_default_tools_list_payload.cache_clear()
     _widget_resource_index.cache_clear()
@@ -190,7 +139,9 @@ def _record_tool_result(
         tool_payload["calls"] = int(tool_payload.get("calls", 0)) + 1
         if errored:
             tool_payload["errors"] = int(tool_payload.get("errors", 0)) + 1
-        tool_payload["latency_total_ms"] = float(tool_payload.get("latency_total_ms", 0.0)) + latency_ms
+        tool_payload["latency_total_ms"] = (
+            float(tool_payload.get("latency_total_ms", 0.0)) + latency_ms
+        )
 
 
 def handle_rpc_request(
@@ -302,7 +253,9 @@ def handle_rpc_request(
         if registry is None:
             tools_result = _get_default_tools_list_payload()
         else:
-            tools_result = {"tools": [serialize_tool_definition(tool) for tool in active_registry.values()]}
+            tools_result = {
+                "tools": [serialize_tool_definition(tool) for tool in active_registry.values()]
+            }
         return {
             "jsonrpc": "2.0",
             "id": request_id,
@@ -322,11 +275,7 @@ def handle_rpc_request(
         if tool is None:
             return _rpc_error(request_id, -32601, f"Tool not found: {tool_name}")
 
-        resolved_arguments = _resolve_tool_arguments_with_cart_session_fallback(
-            tool_name=tool_name,
-            arguments=arguments,
-            params=params,
-        )
+        resolved_arguments = arguments
 
         validation_error = _validate_input_schema(resolved_arguments, tool.input_schema)
         if validation_error is not None:
@@ -349,7 +298,9 @@ def handle_rpc_request(
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "result": {
-                        "content": [{"type": "text", "text": _build_tool_success_text(structured_payload)}],
+                        "content": [
+                            {"type": "text", "text": _build_tool_success_text(structured_payload)}
+                        ],
                         "structuredContent": structured_payload,
                         "isError": False,
                     },
@@ -374,7 +325,9 @@ def handle_rpc_request(
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
-                    "content": [{"type": "text", "text": _build_tool_success_text(structured_payload)}],
+                    "content": [
+                        {"type": "text", "text": _build_tool_success_text(structured_payload)}
+                    ],
                     "structuredContent": structured_payload,
                     "isError": False,
                 },
@@ -387,7 +340,7 @@ def handle_rpc_request(
                 cache_hit=False if cache_key is not None else None,
             )
             error_payload = _classify_tool_error(exc)
-            logger.exception(
+            logger.error(
                 "mcp_tool_call_failed",
                 extra={
                     "http_request_id": http_request_id,
@@ -396,6 +349,7 @@ def handle_rpc_request(
                     "error_type": error_payload["type"],
                     "retriable": error_payload["retriable"],
                 },
+                exc_info=False,
             )
             return {
                 "jsonrpc": "2.0",
@@ -408,7 +362,6 @@ def handle_rpc_request(
                             "message": error_payload["message"],
                             "retriable": error_payload["retriable"],
                             "request_id": request_id,
-                            "http_request_id": http_request_id,
                         }
                     },
                     "isError": True,
@@ -477,8 +430,12 @@ def _widget_resource_index() -> dict[str, dict[str, Any]]:
         connect_domains = csp.get("connectDomains")
         if not isinstance(connect_domains, list):
             connect_domains = []
-        normalized_resource_domains = [str(domain).strip() for domain in resource_domains if str(domain).strip()]
-        normalized_connect_domains = [str(domain).strip() for domain in connect_domains if str(domain).strip()]
+        normalized_resource_domains = [
+            str(domain).strip() for domain in resource_domains if str(domain).strip()
+        ]
+        normalized_connect_domains = [
+            str(domain).strip() for domain in connect_domains if str(domain).strip()
+        ]
         mapping.setdefault(
             uri,
             {
@@ -607,8 +564,12 @@ def _get_tool_cache_ttl_seconds(tool_name: str) -> float | None:
 @lru_cache(maxsize=1)
 def _get_tool_cache_config() -> dict[str, Any]:
     settings = get_settings()
-    search_ttl = float(getattr(settings, "mcp_search_cache_ttl_seconds", TOOL_RESPONSE_CACHE_TTL_SECONDS))
-    max_entries = int(getattr(settings, "mcp_tool_cache_max_entries", TOOL_RESPONSE_CACHE_MAX_ENTRIES))
+    search_ttl = float(
+        getattr(settings, "mcp_search_cache_ttl_seconds", TOOL_RESPONSE_CACHE_TTL_SECONDS)
+    )
+    max_entries = int(
+        getattr(settings, "mcp_tool_cache_max_entries", TOOL_RESPONSE_CACHE_MAX_ENTRIES)
+    )
     if search_ttl <= 0:
         search_ttl = TOOL_RESPONSE_CACHE_TTL_SECONDS
     if max_entries <= 0:
@@ -652,18 +613,17 @@ def _set_cached_tool_payload(
 
 
 def _build_tool_success_text(result_payload: dict[str, Any]) -> str:
-    summary: dict[str, Any] = {"ok": True, "keys": sorted(result_payload.keys())}
-    if "count" in result_payload:
-        summary["count"] = result_payload.get("count")
-    if "status" in result_payload:
-        summary["status"] = result_payload.get("status")
-    return json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(result_payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def _inline_local_widget_assets(html_text: str, *, widget_dir: Path) -> str:
     def _read_local_asset(relative_path: str) -> str | None:
-        normalized_relative = relative_path.lstrip("./")
-        candidate = (widget_dir / normalized_relative).resolve()
+        normalized_path = Path(relative_path)
+        if normalized_path.is_absolute():
+            return None
+        if any(part in {"..", ""} for part in normalized_path.parts):
+            return None
+        candidate = (widget_dir / normalized_path).resolve()
         widget_root = widget_dir.resolve()
         if candidate == widget_root or widget_root not in candidate.parents:
             return None
@@ -688,6 +648,30 @@ def _inline_local_widget_assets(html_text: str, *, widget_dir: Path) -> str:
     return _WIDGET_SCRIPT_SRC_PATTERN.sub(_replace_js, with_inlined_css)
 
 
+def _sanitize_user_agent(user_agent: str) -> str:
+    cleaned = re.sub(r"[\r\n\t]+", " ", user_agent).strip()
+    max_length = 120
+    if len(cleaned) > max_length:
+        return f"{cleaned[:max_length]}..."
+    return cleaned
+
+
+def _parse_content_length(headers: Mapping[str, str]) -> int:
+    transfer_encoding = str(headers.get("Transfer-Encoding") or "").lower()
+    if "chunked" in transfer_encoding:
+        raise ValueError("Unsupported Transfer-Encoding: chunked")
+    raw_length = headers.get("Content-Length")
+    if raw_length is None:
+        raise ValueError("Missing Content-Length header")
+    try:
+        content_length = int(raw_length)
+    except ValueError as exc:
+        raise ValueError("Invalid Content-Length header") from exc
+    if content_length < 0:
+        raise ValueError("Content-Length must be non-negative")
+    return content_length
+
+
 def _resolve_http_request_id(incoming_request_id: str | None) -> str:
     if incoming_request_id is None:
         return uuid4().hex
@@ -707,9 +691,10 @@ def _build_access_log_message(
     user_agent: str,
     request_id: str,
 ) -> str:
+    safe_user_agent = _sanitize_user_agent(user_agent)
     return (
         f"[REQ] {method} {path} -> {status_code} | {latency_ms:.2f} ms | "
-        f"ip={client_ip} | ua={user_agent} | id={request_id}"
+        f"ip={client_ip} | ua={safe_user_agent} | id={request_id}"
     )
 
 
@@ -735,7 +720,9 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
             )
             return
         self.send_error(HTTPStatus.NOT_FOUND)
-        self._log_access(request_id=request_id, status_code=HTTPStatus.NOT_FOUND, started_at=started_at)
+        self._log_access(
+            request_id=request_id, status_code=HTTPStatus.NOT_FOUND, started_at=started_at
+        )
 
     def do_POST(self) -> None:  # noqa: N802
         started_at = _perf_counter()
@@ -761,17 +748,7 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-            if content_length < 0:
-                self._send_json(
-                    _rpc_error(None, -32600, "Invalid Request: Content-Length must be non-negative"),
-                    status=HTTPStatus.BAD_REQUEST,
-                    request_id=request_id,
-                )
-                self._log_access(
-                    request_id=request_id, status_code=HTTPStatus.BAD_REQUEST, started_at=started_at
-                )
-                return
+            content_length = _parse_content_length(self.headers)
             if content_length > MAX_REQUEST_BODY_BYTES:
                 self._send_json(
                     _rpc_error(None, -32600, "Invalid Request: body is too large"),
@@ -797,21 +774,29 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
                 )
                 return
             self._send_json(response_payload, request_id=request_id)
-            self._log_access(request_id=request_id, status_code=HTTPStatus.OK, started_at=started_at)
-        except ValueError:
+            self._log_access(
+                request_id=request_id, status_code=HTTPStatus.OK, started_at=started_at
+            )
+        except ValueError as exc:
+            error_message = str(exc)
+            status = HTTPStatus.BAD_REQUEST
+            if "Missing Content-Length" in error_message:
+                status = HTTPStatus.LENGTH_REQUIRED
             self._send_json(
-                _rpc_error(None, -32600, "Invalid Request: invalid Content-Length header"),
-                status=HTTPStatus.BAD_REQUEST,
+                _rpc_error(None, -32600, f"Invalid Request: {error_message}"),
+                status=status,
                 request_id=request_id,
             )
-            self._log_access(request_id=request_id, status_code=HTTPStatus.BAD_REQUEST, started_at=started_at)
+            self._log_access(request_id=request_id, status_code=status, started_at=started_at)
         except json.JSONDecodeError:
             self._send_json(
                 _rpc_error(None, -32700, "Parse error"),
                 status=HTTPStatus.BAD_REQUEST,
                 request_id=request_id,
             )
-            self._log_access(request_id=request_id, status_code=HTTPStatus.BAD_REQUEST, started_at=started_at)
+            self._log_access(
+                request_id=request_id, status_code=HTTPStatus.BAD_REQUEST, started_at=started_at
+            )
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Keep server output concise in local development.
@@ -849,7 +834,7 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
         latency_ms = (_perf_counter() - started_at) * 1000.0
         client_host = str(self.client_address[0]) if self.client_address else ""
         client_port = int(self.client_address[1]) if self.client_address else 0
-        user_agent = str(self.headers.get("User-Agent") or "")
+        user_agent = _sanitize_user_agent(str(self.headers.get("User-Agent") or ""))
         message = _build_access_log_message(
             method=self.command,
             path=self.path,

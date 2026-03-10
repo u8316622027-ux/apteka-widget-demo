@@ -1,4 +1,4 @@
-(function () {
+(() => {
   const root = document.querySelector("[data-widget-shell]");
   if (!root || typeof window.ProductsState?.createContext !== "function") {
     return;
@@ -25,16 +25,22 @@
       return;
     }
     const firstCard = track.querySelector(".product-card");
-    const step = firstCard instanceof HTMLElement ? firstCard.offsetWidth + 14 : 280;
+    const step =
+      firstCard instanceof HTMLElement ? firstCard.offsetWidth + 14 : 280;
     track.scrollBy({ left: direction * step, behavior: "smooth" });
     window.setTimeout(ui.updateCarouselControls, 280);
   };
 
   leftArrow?.addEventListener("click", () => scrollTrack(-1));
   rightArrow?.addEventListener("click", () => scrollTrack(1));
-  track?.addEventListener("scroll", ui.updateCarouselControls, { passive: true });
+  track?.addEventListener("scroll", ui.updateCarouselControls, {
+    passive: true,
+  });
   track?.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
+    const target =
+      event.target instanceof Element
+        ? event.target.closest("[data-action]")
+        : null;
     if (!(target instanceof HTMLElement)) {
       return;
     }
@@ -47,7 +53,9 @@
 
   searchButton?.addEventListener("click", (event) => {
     event.preventDefault();
-    actions.searchProducts(input instanceof HTMLInputElement ? input.value : "");
+    actions.searchProducts(
+      input instanceof HTMLInputElement ? input.value : "",
+    );
   });
 
   input?.addEventListener("keydown", (event) => {
@@ -57,7 +65,9 @@
     }
   });
 
-  window.addEventListener("resize", ui.updateCarouselControls, { passive: true });
+  window.addEventListener("resize", ui.updateCarouselControls, {
+    passive: true,
+  });
   if (typeof utils?.setLoading === "function") {
     utils.setLoading(true);
   }

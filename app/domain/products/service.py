@@ -1,4 +1,4 @@
-﻿"""Products business rules."""
+"""Products business rules."""
 
 from __future__ import annotations
 

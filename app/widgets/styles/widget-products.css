@@ -327,7 +327,12 @@ body {
 
 .skeleton-block {
   border-radius: 10px;
-  background: linear-gradient(90deg, rgba(90, 112, 148, 0.24), rgba(130, 156, 196, 0.35), rgba(90, 112, 148, 0.24));
+  background: linear-gradient(
+    90deg,
+    rgba(90, 112, 148, 0.24),
+    rgba(130, 156, 196, 0.35),
+    rgba(90, 112, 148, 0.24)
+  );
   background-size: 220% 100%;
   animation: products-skeleton-wave 1.2s ease-in-out infinite;
 }
@@ -370,7 +375,11 @@ body {
   height: 86px;
   border-radius: 18px;
   border: 1px solid rgba(59, 103, 188, 0.58);
-  background: linear-gradient(180deg, rgba(10, 22, 50, 0.76), rgba(14, 32, 70, 0.66));
+  background: linear-gradient(
+    180deg,
+    rgba(10, 22, 50, 0.76),
+    rgba(14, 32, 70, 0.66)
+  );
   color: #cfe0ff;
   display: grid;
   place-items: center;

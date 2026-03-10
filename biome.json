@@ -1,7 +1,8 @@
 ﻿{
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "ignoreUnknown": true
+    "ignoreUnknown": true,
+    "ignore": ["pytest-cache-files-*", "tests/.tmp"]
   },
   "formatter": {
     "enabled": true,

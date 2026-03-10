@@ -1,4 +1,4 @@
-﻿"""Tests for theme tool behavior."""
+"""Tests for theme tool behavior."""
 
 from __future__ import annotations
 

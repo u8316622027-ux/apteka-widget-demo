@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import unittest
+from pathlib import Path
 
 
 class WidgetTemplateTests(unittest.TestCase):
@@ -37,8 +37,8 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_shell_is_present(self) -> None:
         template_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn("data-widget-shell=", template_text)
-        self.assertIn("x-data=", template_text)
-        self.assertIn("alpinejs", template_text)
+        self.assertNotIn("x-data=", template_text)
+        self.assertNotIn("alpinejs", template_text)
 
     def test_products_template_has_toolbar_and_carousel(self) -> None:
         template_text = self._read_products_bundle_text()
@@ -77,7 +77,7 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_includes_mobile_and_theme_tuning(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn("scroll-snap-type: x mandatory", template_text)
-        self.assertIn(":root[data-theme=\"light\"]", template_text)
+        self.assertIn(':root[data-theme="light"]', template_text)
         self.assertIn("--shadow-card: 0 10px 22px rgba(14, 33, 71, 0.14)", template_text)
 
 

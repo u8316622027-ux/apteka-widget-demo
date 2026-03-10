@@ -80,6 +80,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
 
 
 def serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
+    ui_domain = str(tool.ui.get("domain") or "").strip()
     payload = {
         "name": tool.name,
         "description": tool.description,
@@ -87,10 +88,11 @@ def serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
         "ui": tool.ui,
         "_meta": {
             "openai/widgetAccessible": True,
-            "openai/widgetDomain": str(tool.ui.get("domain") or ""),
             "openai/widgetCSP": tool.ui.get("csp") or {},
         },
     }
+    if not ui_domain:
+        payload["_meta"]["openai/widgetDomain"] = ""
     if tool.output_template:
         payload["outputTemplate"] = tool.output_template
         payload["_meta"]["openai/outputTemplate"] = tool.output_template
@@ -126,7 +128,9 @@ def decorate_tool_result(
 def _resolve_widget_page(tool_name: str) -> str:
     if tool_name == "search_products":
         return "search"
-    return "search"
+    if tool_name == "support_knowledge_search":
+        return "support"
+    return "default"
 
 
 def _build_widget_ui_config() -> dict[str, Any]:
@@ -172,9 +176,9 @@ def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, An
 
 def _set_widget_theme_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     raw_theme = str(arguments.get("theme", "default")).strip().lower()
-    if raw_theme.startswith("dark") or raw_theme.startswith("????"):
+    if raw_theme.startswith("dark") or raw_theme.startswith("тём"):
         normalized = "dark"
-    elif raw_theme.startswith("light") or raw_theme.startswith("?????"):
+    elif raw_theme.startswith("light") or raw_theme.startswith("свет"):
         normalized = "light"
     elif raw_theme in {"auto", "automatic", "default", "system", ""}:
         normalized = "auto"
@@ -189,8 +193,8 @@ def _set_widget_theme_handler(arguments: dict[str, Any]) -> dict[str, Any]:
         "theme_mode": theme_mode,
         "auto_disabled": not is_auto,
         "assistant_notice": (
-            "?????????? ???? ????????. ?????? ???? ???????????, ???? ???????????? ?? ??????? ??????? ?????."
+            "Автоподбор темы отключён. Тема зафиксирована, но её всегда можно сменить позже."
             if not is_auto
-            else "?????????? ???? ???????. ???? ????? ???????? ?????????????."
+            else "Автоподбор темы включён. Цвет будет меняться автоматически."
         ),
     }

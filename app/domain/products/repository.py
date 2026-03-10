@@ -1,4 +1,4 @@
-﻿"""Products repository contracts."""
+"""Products repository contracts."""
 
 from __future__ import annotations
 

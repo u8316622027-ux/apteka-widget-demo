@@ -1,8 +1,10 @@
-(function () {
+(() => {
   const attach = (ctx) => {
     const { dom } = ctx;
     const { supportButton, supportLayer, supportPopup } = dom;
-    const supportCloseButton = document.getElementById("products-support-close");
+    const supportCloseButton = document.getElementById(
+      "products-support-close",
+    );
     if (
       !(supportButton instanceof HTMLElement) ||
       !(supportLayer instanceof HTMLElement) ||

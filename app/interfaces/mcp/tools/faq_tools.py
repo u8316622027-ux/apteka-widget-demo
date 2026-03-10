@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Callable
-from urllib.request import Request, urlopen as default_urlopen
+from urllib.request import Request
+from urllib.request import urlopen as default_urlopen
 
 from app.core.env import read_env_file_value
 from app.domain.faq.repository import FaqSearchRepository
@@ -99,12 +100,16 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
             FAQ_MATCH_COUNT_DEFAULT,
         )
         self._match_threshold = (
-            match_threshold if match_threshold is not None else _read_float_env("FAQ_MATCH_THRESHOLD")
+            match_threshold
+            if match_threshold is not None
+            else _read_float_env("FAQ_MATCH_THRESHOLD")
         )
         self._timeout = timeout
         self._urlopen = urlopen
 
-    def search(self, query_embedding: list[float], limit: int | None = None) -> list[dict[str, Any]]:
+    def search(
+        self, query_embedding: list[float], limit: int | None = None
+    ) -> list[dict[str, Any]]:
         if not self._base_url:
             raise ValueError("SUPABASE_URL is not configured")
         if not self._api_key:
@@ -116,7 +121,9 @@ class SupabaseFaqSearchRepository(FaqSearchRepository):
         }
         if self._match_threshold is not None:
             payload_dict["match_threshold"] = self._match_threshold
-        payload = json.dumps(payload_dict, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        payload = json.dumps(payload_dict, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
         request = Request(
             url=f"{self._base_url}/rest/v1/rpc/{SUPABASE_FAQ_RPC_FUNCTION}",
             data=payload,
@@ -164,10 +171,10 @@ def faq_search(
 
 
 def _read_env(key: str) -> str:
-    value = read_env_file_value(key, env_path=ENV_FILE_PATH).strip()
+    value = _read_os_env(key).strip()
     if value:
         return value
-    return _read_os_env(key).strip()
+    return read_env_file_value(key, env_path=ENV_FILE_PATH).strip()
 
 
 def _read_os_env(key: str) -> str:
@@ -195,4 +202,3 @@ def _read_float_env(key: str) -> float | None:
         return float(raw_value)
     except ValueError:
         return None
-

@@ -1,8 +1,15 @@
-(function () {
+(() => {
   const attach = (ctx) => {
     const { state, dom, utils } = ctx;
     const { track, leftArrow, rightArrow } = dom;
-    const { normalizeText, escapeHtml, toMoney, computeDiscount, getFallbackImage, debugLog } = utils;
+    const {
+      normalizeText,
+      escapeHtml,
+      toMoney,
+      computeDiscount,
+      getFallbackImage,
+      debugLog,
+    } = utils;
 
     const updateCarouselControls = () => {
       if (!track || !leftArrow || !rightArrow) {
@@ -59,18 +66,36 @@
 
       track.innerHTML = state.products
         .map((product) => {
-          const hasBasePrice = typeof product.price === "number" && product.price > 0;
-          const hasDiscountPrice = typeof product.discountPrice === "number" && product.discountPrice > 0;
-          const hasDiscount = hasBasePrice && hasDiscountPrice && product.discountPrice < product.price;
-          const effectivePrice = hasDiscount ? product.discountPrice : hasBasePrice ? product.price : null;
-          const discount = hasDiscount ? computeDiscount(product.price, product.discountPrice) : null;
-          const discountBadge = discount ? `<span class="discount">-${discount}%</span>` : "";
-          const oldPriceLine = hasDiscount ? `<p class="old-price">${toMoney(product.price)} ${discountBadge}</p>` : "";
+          const hasBasePrice =
+            typeof product.price === "number" && product.price > 0;
+          const hasDiscountPrice =
+            typeof product.discountPrice === "number" &&
+            product.discountPrice > 0;
+          const hasDiscount =
+            hasBasePrice &&
+            hasDiscountPrice &&
+            product.discountPrice < product.price;
+          const effectivePrice = hasDiscount
+            ? product.discountPrice
+            : hasBasePrice
+              ? product.price
+              : null;
+          const discount = hasDiscount
+            ? computeDiscount(product.price, product.discountPrice)
+            : null;
+          const discountBadge = discount
+            ? `<span class="discount">-${discount}%</span>`
+            : "";
+          const oldPriceLine = hasDiscount
+            ? `<p class="old-price">${toMoney(product.price)} ${discountBadge}</p>`
+            : "";
           const inStock = typeof effectivePrice === "number";
           const priceLine = inStock
             ? `<p class="new-price">${toMoney(effectivePrice)}</p>`
             : '<p class="new-price is-unavailable">Нет в наличии</p>';
-          const safeProductUrl = escapeHtml(normalizeText(product.productUrl) || "https://www.apteka.md/");
+          const safeProductUrl = escapeHtml(
+            normalizeText(product.productUrl) || "https://www.apteka.md/",
+          );
           const actionButton = inStock
             ? `<a class="buy-link" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer">Купить</a>`
             : `<button class="add-to-cart-button add-to-cart-button--ghost" data-action="support-contact" data-product-id="${escapeHtml(product.id)}">Уточнить наличие</button>`;
@@ -101,7 +126,9 @@
         })
         .join("");
 
-      const supportButtons = track.querySelectorAll('[data-action="support-contact"]');
+      const supportButtons = track.querySelectorAll(
+        '[data-action="support-contact"]',
+      );
       for (const button of supportButtons) {
         if (!(button instanceof HTMLElement)) {
           continue;

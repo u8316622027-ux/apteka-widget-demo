@@ -1,17 +1,24 @@
-(function () {
+(() => {
   const attach = (ctx) => {
     const LAST_SEARCH_QUERY_KEY = "apteka_widget_last_query";
     const { state, dom, constants, utils, theme } = ctx;
     const { input } = dom;
     const { INITIAL_PAYLOAD_WAIT_MS, INITIAL_PAYLOAD_POLL_MS } = constants;
-    const { normalizeText, extractItems, mapProduct, setLoading, debugLog } = utils;
+    const { normalizeText, extractItems, mapProduct, setLoading, debugLog } =
+      utils;
 
     const extractToolPage = (payload) => {
       if (!payload || typeof payload !== "object") {
         return "";
       }
-      const widgetNode = payload.widget && typeof payload.widget === "object" ? payload.widget : {};
-      const openNode = widgetNode.open && typeof widgetNode.open === "object" ? widgetNode.open : {};
+      const widgetNode =
+        payload.widget && typeof payload.widget === "object"
+          ? payload.widget
+          : {};
+      const openNode =
+        widgetNode.open && typeof widgetNode.open === "object"
+          ? widgetNode.open
+          : {};
       return (
         normalizeText(openNode.page) ||
         normalizeText(payload.widget_page) ||
@@ -50,7 +57,8 @@
         if (!candidate || typeof candidate !== "object") {
           continue;
         }
-        return candidate.structuredContent && typeof candidate.structuredContent === "object"
+        return candidate.structuredContent &&
+          typeof candidate.structuredContent === "object"
           ? candidate.structuredContent
           : candidate;
       }
@@ -73,7 +81,8 @@
         if (!candidate || typeof candidate !== "object") {
           continue;
         }
-        return candidate.structuredContent && typeof candidate.structuredContent === "object"
+        return candidate.structuredContent &&
+          typeof candidate.structuredContent === "object"
           ? candidate.structuredContent
           : candidate;
       }
@@ -100,9 +109,14 @@
           // ignore storage write errors
         }
       }
-      const isSearchPayload = hasSearchResultsPayload(payload) || !requestedPage || requestedPage === "search";
+      const isSearchPayload =
+        hasSearchResultsPayload(payload) ||
+        !requestedPage ||
+        requestedPage === "search";
       if (isSearchPayload) {
-        const mapped = extractItems(payload).map(mapProduct).filter((product) => product.id);
+        const mapped = extractItems(payload)
+          .map(mapProduct)
+          .filter((product) => product.id);
         if (query && input) {
           input.value = query;
         }
@@ -218,9 +232,13 @@
         if (typeof window.openai?.callTool !== "function") {
           throw new Error("openai.callTool is unavailable");
         }
-        const toolResult = await window.openai.callTool("search_products", { query: normalized });
+        const toolResult = await window.openai.callTool("search_products", {
+          query: normalized,
+        });
         const payload =
-          (toolResult && typeof toolResult === "object" && toolResult.structuredContent) ||
+          (toolResult &&
+            typeof toolResult === "object" &&
+            toolResult.structuredContent) ||
           toolResult ||
           {};
         if (normalizeText(payload.api_base_url)) {
@@ -228,10 +246,12 @@
         }
         theme?.updateFromPayload(payload);
         state.requestedPage = "search";
-        state.products = extractItems(payload).map(mapProduct).filter((product) => product.id);
+        state.products = extractItems(payload)
+          .map(mapProduct)
+          .filter((product) => product.id);
       } catch (error) {
         debugLog("search_products_error", {
-          message: String(error && error.message ? error.message : error),
+          message: String(error?.message ? error.message : error),
           level: "error",
         });
         state.products = [];

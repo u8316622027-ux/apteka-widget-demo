@@ -1,4 +1,4 @@
-﻿"""Product entities."""
+"""Product entities."""
 
 from __future__ import annotations
 

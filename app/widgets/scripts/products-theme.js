@@ -1,4 +1,4 @@
-(function () {
+(() => {
   const attach = (ctx) => {
     const THEME_MODE_KEY = "apteka_widget_theme_mode";
     const THEME_VALUE_KEY = "apteka_widget_theme_value";

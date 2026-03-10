@@ -13,7 +13,9 @@ class FaqSearchService:
     def __init__(self, repository: FaqSearchRepository) -> None:
         self._repository = repository
 
-    def search(self, query: str, query_embedding: list[float], limit: int | None = None) -> tuple[str, list[dict[str, Any]]]:
+    def search(
+        self, query: str, query_embedding: list[float], limit: int | None = None
+    ) -> tuple[str, list[dict[str, Any]]]:
         normalized_query = query.strip()
         if not normalized_query:
             raise ValueError("query must not be empty")

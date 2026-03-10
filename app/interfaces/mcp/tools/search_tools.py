@@ -1,4 +1,4 @@
-﻿"""MCP search tools."""
+"""MCP search tools."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import json
 from dataclasses import asdict
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen as default_urlopen
+from urllib.request import Request
+from urllib.request import urlopen as default_urlopen
 
 from app.domain.products.entities import ProductSummary
 from app.domain.products.repository import ProductSearchRepository
@@ -162,9 +163,13 @@ def _map_product(item: dict[str, Any]) -> ProductSummary:
             meta_ro = meta_translations.get("ro")
             meta_ru = meta_translations.get("ru")
             if isinstance(meta_ro, dict):
-                slug_ro = meta_ro.get("slug") or meta_ro.get("product_slug") or meta_ro.get("productSlug")
+                slug_ro = (
+                    meta_ro.get("slug") or meta_ro.get("product_slug") or meta_ro.get("productSlug")
+                )
             if isinstance(meta_ru, dict):
-                slug_ru = meta_ru.get("slug") or meta_ru.get("product_slug") or meta_ru.get("productSlug")
+                slug_ru = (
+                    meta_ru.get("slug") or meta_ru.get("product_slug") or meta_ru.get("productSlug")
+                )
     return ProductSummary(
         id=product_id,
         name_ro=str(name_ro) if name_ro else (fallback_name or None),
@@ -174,8 +179,12 @@ def _map_product(item: dict[str, Any]) -> ProductSummary:
         country=str(country) if country else None,
         price=price,
         discount_price=discount_price,
-        description_ro=str(description_ro) if description_ro else (str(raw_description) if raw_description else None),
-        description_ru=str(description_ru) if description_ru else (str(raw_description) if raw_description else None),
+        description_ro=str(description_ro)
+        if description_ro
+        else (str(raw_description) if raw_description else None),
+        description_ru=str(description_ru)
+        if description_ru
+        else (str(raw_description) if raw_description else None),
         image_url=str(image_url) if image_url else None,
         product_url=str(product_url) if product_url else None,
         slug_ro=str(slug_ro) if slug_ro else None,
