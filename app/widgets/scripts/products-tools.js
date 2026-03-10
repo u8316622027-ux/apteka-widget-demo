@@ -3,7 +3,7 @@
     const { state, dom, constants, utils, cart, sync } = ctx;
     const { input, cartModal } = dom;
     const { INITIAL_PAYLOAD_WAIT_MS, INITIAL_PAYLOAD_POLL_MS } = constants;
-    const { normalizeText, debugLog, extractItems, mapProduct, setLoading } = utils;
+    const { normalizeText, debugLog, extractItems, mapProduct, setLoading, getPriceForCart } = utils;
     const {
       readLocalCart,
       readCartItems,
@@ -55,14 +55,28 @@
       }
       const localCart = readLocalCart();
       const cartItems = readCartItems();
+      const cartSessionId = readStoredCartSessionId();
+      const nextLocalCart = { ...localCart };
       const payloadItems = Object.entries(localCart)
         .map(([productId, rawQuantity]) => {
           const normalizedProductId = normalizeText(productId);
           const quantity = normalizeCartQuantity(rawQuantity);
-          if (!normalizedProductId || quantity <= 0) {
+          if (!normalizedProductId || quantity < 0) {
             return null;
           }
-          const itemMeta = cartItems[normalizedProductId];
+          const itemMeta =
+            cartItems[normalizedProductId] && typeof cartItems[normalizedProductId] === "object"
+              ? cartItems[normalizedProductId]
+              : {};
+          if (quantity > 0) {
+            const price = getPriceForCart(itemMeta);
+            if (price <= 0) {
+              delete nextLocalCart[normalizedProductId];
+              itemMeta.price = 0;
+              itemMeta.discountPrice = 0;
+              return null;
+            }
+          }
           return {
             product_id: normalizedProductId,
             quantity,
@@ -74,10 +88,15 @@
           };
         })
         .filter(Boolean);
+      writeLocalCart(nextLocalCart);
       if (!payloadItems.length) {
         return Promise.resolve();
       }
-      return window.openai.callTool("add_to_my_cart", { items: payloadItems });
+      const payload = {
+        items: payloadItems,
+        cart_session_id: cartSessionId || undefined,
+      };
+      return window.openai.callTool("add_to_my_cart", payload);
     };
 
     const bootstrapCartFromBackend = async () => {
@@ -146,6 +165,38 @@
       window.setTimeout(() => {
         run();
       }, attemptEveryMs);
+    };
+
+    const extractToolPage = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return "";
+      }
+      const widgetNode = payload.widget && typeof payload.widget === "object" ? payload.widget : {};
+      const openNode = widgetNode.open && typeof widgetNode.open === "object" ? widgetNode.open : {};
+      return (
+        normalizeText(openNode.page) ||
+        normalizeText(payload.widget_page) ||
+        normalizeText(payload.page)
+      ).toLowerCase();
+    };
+
+    const hasSearchResultsPayload = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return false;
+      }
+      return (
+        Array.isArray(payload.products) ||
+        Array.isArray(payload.results) ||
+        Object.prototype.hasOwnProperty.call(payload, "no_results") ||
+        Object.prototype.hasOwnProperty.call(payload, "query")
+      );
+    };
+
+    const hasTrackingPayload = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return false;
+      }
+      return Array.isArray(payload.orders) || Object.prototype.hasOwnProperty.call(payload, "lookup");
     };
 
     const extractInitialToolPayload = () => {
@@ -226,16 +277,29 @@
       if (normalizeText(payload.api_base_url)) {
         state.apiBaseUrl = normalizeText(payload.api_base_url);
       }
-      const mapped = extractItems(payload).map(mapProduct).filter((product) => product.id);
-      if (!mapped.length) {
-        return false;
+      const requestedPage = extractToolPage(payload);
+      if (requestedPage) {
+        state.requestedPage = requestedPage;
+      }
+      if (hasTrackingPayload(payload)) {
+        state.tracking = {
+          lookup: normalizeText(payload.lookup),
+          count: Number(payload.count) || 0,
+          orders: Array.isArray(payload.orders) ? payload.orders : [],
+        };
       }
       const query = normalizeText(payload.query);
-      if (query && input) {
-        input.value = query;
+      const isSearchPayload = hasSearchResultsPayload(payload) || !requestedPage || requestedPage === "search";
+      if (isSearchPayload) {
+        const mapped = extractItems(payload).map(mapProduct).filter((product) => product.id);
+        if (query && input) {
+          input.value = query;
+        }
+        state.products = mapped;
+        state.lastQuery = query;
+        state.loadedOnce = true;
+        return true;
       }
-      state.products = mapped;
-      state.lastQuery = query;
       state.loadedOnce = true;
       return true;
     };
@@ -320,6 +384,7 @@
         if (normalizeText(payload.api_base_url)) {
           state.apiBaseUrl = normalizeText(payload.api_base_url);
         }
+        state.requestedPage = "search";
         state.products = extractItems(payload).map(mapProduct).filter((product) => product.id);
       } catch (_error) {
         state.products = [];
@@ -346,6 +411,8 @@
       if (cartModal && !cartModal.hidden) {
         ctx.ui.renderCartModal();
       }
+      ctx.ui.renderPageCart();
+      ctx.ui.renderCheckoutSummary();
       enqueueCartSync(() => callAddToMyCart(product)).catch((error) => {
         debugLog("call_add_to_my_cart_error", {
           message: String(error && error.message ? error.message : error),

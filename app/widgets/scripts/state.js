@@ -13,8 +13,14 @@
       isSearching: false,
       isLoading: true,
       products: [],
+      tracking: {
+        lookup: "",
+        count: 0,
+        orders: [],
+      },
       lastQuery: "",
       apiBaseUrl: "",
+      requestedPage: "search",
       cartSyncQueue: Promise.resolve(),
       cartBootstrapCompleted: false,
     };
@@ -31,9 +37,32 @@
     const cartModalClose = document.getElementById("products-cart-close");
     const cartModalItems = document.getElementById("products-cart-items");
     const cartModalTotal = document.getElementById("products-cart-total");
+    const goToCartButton = document.getElementById("products-go-to-cart-button");
+    const checkoutButton = document.getElementById("products-checkout-button");
     const supportButton = document.getElementById("products-support-button");
     const supportLayer = document.getElementById("products-support-layer");
     const supportPopup = document.getElementById("products-support-popup");
+    const pageSearch = document.getElementById("products-page-search");
+    const pageMyCart = document.getElementById("products-page-my-cart");
+    const pageCheckout = document.getElementById("products-page-checkout");
+    const pageTracking = document.getElementById("products-page-tracking");
+    const backFromMyCartButton = document.getElementById("products-back-from-my-cart");
+    const backFromCheckoutButton = document.getElementById("products-back-from-checkout");
+    const backFromTrackingButton = document.getElementById("products-back-from-tracking");
+    const pageCartItems = document.getElementById("products-page-cart-items");
+    const pageCartTotal = document.getElementById("products-page-cart-total");
+    const pageCartCheckoutButton = document.getElementById("products-page-cart-checkout-button");
+    const pageCartContinueButton = document.getElementById("products-page-cart-continue");
+    const checkoutItems = document.getElementById("products-checkout-items");
+    const checkoutTotal = document.getElementById("products-checkout-total");
+    const checkoutForm = document.getElementById("products-checkout-form");
+    const checkoutName = document.getElementById("products-checkout-name");
+    const checkoutPhone = document.getElementById("products-checkout-phone");
+    const checkoutNotes = document.getElementById("products-checkout-notes");
+    const checkoutSubmitButton = document.getElementById("products-checkout-submit");
+    const trackingLookup = document.getElementById("products-tracking-lookup");
+    const trackingCount = document.getElementById("products-tracking-count");
+    const trackingOrders = document.getElementById("products-tracking-orders");
 
     const normalizeText = (value) => String(value || "").trim();
     const escapeHtml = (value) =>
@@ -43,7 +72,38 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
-    const debugLog = () => {};
+    const debugLog = (eventName, payload) => {
+      const name = normalizeText(eventName) || "event";
+      const safePayload = payload && typeof payload === "object" ? payload : {};
+      const record = {
+        ts: new Date().toISOString(),
+        event: name,
+        payload: safePayload,
+      };
+      try {
+        const prev = Array.isArray(window.__APTEKA_WIDGET_LOGS__)
+          ? window.__APTEKA_WIDGET_LOGS__
+          : [];
+        const next = prev.concat(record).slice(-250);
+        window.__APTEKA_WIDGET_LOGS__ = next;
+      } catch (_error) {
+        // ignore logging storage errors
+      }
+      try {
+        const level = normalizeText(String(safePayload.level || "")).toLowerCase();
+        if (level === "error") {
+          console.error("[products-widget]", name, safePayload);
+          return;
+        }
+        if (level === "warn") {
+          console.warn("[products-widget]", name, safePayload);
+          return;
+        }
+        console.info("[products-widget]", name, safePayload);
+      } catch (_error) {
+        // ignore console errors
+      }
+    };
     const readStorageValue = (key) => {
       try {
         return window.localStorage.getItem(key);
@@ -393,10 +453,10 @@
     const getPriceForCart = (item) => {
       const price = Number(item?.price);
       const discountPrice = Number(item?.discountPrice);
-      if (Number.isFinite(discountPrice)) {
+      if (Number.isFinite(discountPrice) && discountPrice > 0) {
         return discountPrice;
       }
-      if (Number.isFinite(price)) {
+      if (Number.isFinite(price) && price > 0) {
         return price;
       }
       return 0;
@@ -454,8 +514,20 @@
         if (qty <= 0) {
           continue;
         }
-        localCart[productId] = qty;
         const mappedItem = mapProduct(rawItem);
+        const itemPrice = getPriceForCart({
+          price: typeof rawItem.price === "number" ? rawItem.price : mappedItem.price,
+          discountPrice:
+            typeof rawItem.discount_price === "number"
+              ? rawItem.discount_price
+              : typeof rawItem.discountPrice === "number"
+                ? rawItem.discountPrice
+                : mappedItem.discountPrice,
+        });
+        if (itemPrice <= 0) {
+          continue;
+        }
+        localCart[productId] = qty;
         localItems[productId] = {
           id: productId,
           name: normalizeText(rawItem.name) || mappedItem.name,
@@ -572,16 +644,44 @@
         cartModalClose,
         cartModalItems,
         cartModalTotal,
+        goToCartButton,
+        checkoutButton,
         supportButton,
         supportLayer,
         supportPopup,
+        pageSearch,
+        pageMyCart,
+        pageCheckout,
+        pageTracking,
+        backFromMyCartButton,
+        backFromCheckoutButton,
+        backFromTrackingButton,
+        pageCartItems,
+        pageCartTotal,
+        pageCartCheckoutButton,
+        pageCartContinueButton,
+        checkoutItems,
+        checkoutTotal,
+        checkoutForm,
+        checkoutName,
+        checkoutPhone,
+        checkoutNotes,
+        checkoutSubmitButton,
+        trackingLookup,
+        trackingCount,
+        trackingOrders,
       },
       ui: {
         renderProducts: () => {},
         renderCartModal: () => {},
+        renderPageCart: () => {},
+        renderCheckoutSummary: () => {},
+        renderTrackingPage: () => {},
         renderCartBadge: () => {},
         toggleCartModal: (_nextState) => {},
+        showInternalPage: (_pageName) => {},
         updateCarouselControls: () => {},
+        getCartSummary: () => ({ rows: [], total: 0, count: 0 }),
         toggleSupportPopup: (_nextState) => {},
       },
       actions: {

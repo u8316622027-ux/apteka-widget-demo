@@ -98,7 +98,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "anyOf": [{"required": ["product_id"]}, {"required": ["items"]}],
             },
             handler=_add_to_my_cart_handler,
-            output_template="ui://widget/add-to-my-cart.html",
+            output_template="ui://widget/products.html",
             ui=widget_ui_config,
         ),
         "checkout_order": ToolDefinition(
@@ -162,7 +162,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 },
             },
             handler=_checkout_order_handler,
-            output_template="ui://widget/checkout.html",
+            output_template="ui://widget/products.html",
             ui=widget_ui_config,
         ),
         "support_knowledge_search": ToolDefinition(
@@ -180,7 +180,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "required": ["query"],
             },
             handler=_support_knowledge_search_handler,
-            output_template="ui://widget/faq.html",
+            output_template="",
             ui=widget_ui_config,
         ),
         "my_cart": ToolDefinition(
@@ -191,7 +191,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "properties": {"cart_session_id": {"type": "string"}},
             },
             handler=_my_cart_handler,
-            output_template="ui://widget/my-cart.html",
+            output_template="ui://widget/products.html",
             ui=widget_ui_config,
         ),
         "set_widget_theme": ToolDefinition(
@@ -199,7 +199,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             description="Set storefront widget theme.",
             input_schema={"type": "object"},
             handler=_not_implemented_tool("set_widget_theme"),
-            output_template="ui://widget/theme.html",
+            output_template="",
             ui=widget_ui_config,
         ),
         "track_order_status_ui": ToolDefinition(
@@ -221,26 +221,28 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "required": ["lookup"],
             },
             handler=_track_order_status_ui_handler,
-            output_template="ui://widget/tracking.html",
+            output_template="ui://widget/products.html",
             ui=widget_ui_config,
         ),
     }
 
 
 def serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
-    return {
+    payload = {
         "name": tool.name,
         "description": tool.description,
         "inputSchema": tool.input_schema,
-        "outputTemplate": tool.output_template,
         "ui": tool.ui,
         "_meta": {
-            "openai/outputTemplate": tool.output_template,
             "openai/widgetAccessible": True,
             "openai/widgetDomain": str(tool.ui.get("domain") or ""),
             "openai/widgetCSP": tool.ui.get("csp") or {},
         },
     }
+    if tool.output_template:
+        payload["outputTemplate"] = tool.output_template
+        payload["_meta"]["openai/outputTemplate"] = tool.output_template
+    return payload
 
 
 def decorate_tool_result(
@@ -257,14 +259,28 @@ def decorate_tool_result(
         payload["products"] = normalized_products
         payload["no_results"] = len(normalized_products) == 0
 
-    payload["widget"] = {
-        "open": {
-            "template": tool.output_template,
-            "replace_previous": True,
-        },
-        "ui": tool.ui,
-    }
+    if tool.output_template:
+        payload["widget"] = {
+            "open": {
+                "template": tool.output_template,
+                "replace_previous": True,
+                "page": _resolve_widget_page(tool_name),
+            },
+            "ui": tool.ui,
+        }
     return payload
+
+
+def _resolve_widget_page(tool_name: str) -> str:
+    if tool_name == "search_products":
+        return "search"
+    if tool_name in {"my_cart", "add_to_my_cart"}:
+        return "my-cart"
+    if tool_name == "checkout_order":
+        return "checkout"
+    if tool_name == "track_order_status_ui":
+        return "tracking"
+    return "search"
 
 
 def _build_widget_ui_config() -> dict[str, Any]:

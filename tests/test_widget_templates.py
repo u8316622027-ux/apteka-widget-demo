@@ -39,12 +39,6 @@ class WidgetTemplateTests(unittest.TestCase):
         widget_dir = Path("app/widgets")
         expected_templates = {
             "products.html",
-            "add-to-my-cart.html",
-            "my-cart.html",
-            "checkout.html",
-            "faq.html",
-            "tracking.html",
-            "theme.html",
         }
         existing_templates = {path.name for path in widget_dir.glob("*.html")}
         for template_name in expected_templates:
@@ -54,12 +48,6 @@ class WidgetTemplateTests(unittest.TestCase):
         widget_dir = Path("app/widgets")
         template_names = (
             "products.html",
-            "add-to-my-cart.html",
-            "my-cart.html",
-            "checkout.html",
-            "faq.html",
-            "tracking.html",
-            "theme.html",
         )
         for template_name in template_names:
             template_text = (widget_dir / template_name).read_text(encoding="utf-8")
@@ -155,6 +143,29 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertTrue(Path("app/widgets/scripts/products-support.js").exists())
         self.assertTrue(Path("app/widgets/scripts/products-toast.js").exists())
         self.assertTrue(Path("app/widgets/scripts/products.js").exists())
+
+    def test_legacy_cart_templates_are_removed(self) -> None:
+        self.assertFalse(Path("app/widgets/add-to-my-cart.html").exists())
+        self.assertFalse(Path("app/widgets/my-cart.html").exists())
+        self.assertFalse(Path("app/widgets/checkout.html").exists())
+        self.assertFalse(Path("app/widgets/faq.html").exists())
+        self.assertFalse(Path("app/widgets/theme.html").exists())
+        self.assertFalse(Path("app/widgets/tracking.html").exists())
+
+    def test_widget_shell_script_supports_back_navigation(self) -> None:
+        script_text = Path("app/widgets/scripts/widget-shell.js").read_text(encoding="utf-8")
+        self.assertIn('const NAV_BACK_STORAGE_KEY = "apteka_widget_nav_back_map";', script_text)
+        self.assertIn("const backButton = document.getElementById(\"widget-back-button\");", script_text)
+        self.assertIn("const readBackMap = () => {", script_text)
+        self.assertIn("const writeBackMap = (nextMap) => {", script_text)
+        self.assertIn("const resolveBackEntry = () => {", script_text)
+        self.assertIn("const openWidgetByTemplate = async (template, replacePrevious) => {", script_text)
+        self.assertIn("if (typeof window.openai?.openWidget === \"function\")", script_text)
+        self.assertIn("await window.openai.openWidget(template, { replace_previous: replacePrevious });", script_text)
+        self.assertIn("backButton.addEventListener(\"click\", () => {", script_text)
+        self.assertIn(".callTool(backEntry.tool, backEntry.arguments || {})", script_text)
+        self.assertIn("backMap[nextWidgetId] = {", script_text)
+        self.assertIn("delete backMap[activeWidgetId];", script_text)
 
     def test_products_script_uses_modular_bootstrap_layers(self) -> None:
         script_text = Path("app/widgets/scripts/products.js").read_text(encoding="utf-8")
@@ -352,6 +363,10 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("CART_ITEMS_KEY", template_text)
         self.assertIn('decrease.dataset.action = "cart-decrease"', template_text)
         self.assertIn('increase.dataset.action = "cart-increase"', template_text)
+        self.assertIn('remove.dataset.action = "cart-remove"', template_text)
+        self.assertIn('remove.setAttribute("aria-label",', template_text)
+        self.assertIn('id="products-go-to-cart-button"', template_text)
+        self.assertIn('id="products-checkout-button"', template_text)
 
     def test_products_template_renders_cart_modal_without_innerhtml_for_items(self) -> None:
         template_text = self._read_products_bundle_text()
@@ -411,7 +426,9 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("enqueueCartSync(() => callAddToMyCart(product))", template_text)
         self.assertIn("state.cartSyncQueue = state.cartSyncQueue.catch(() => null).then(run)", template_text)
         self.assertIn("const callSetCartItemQuantity = () =>", template_text)
-        self.assertIn('window.openai.callTool("add_to_my_cart", { items: payloadItems })', template_text)
+        self.assertIn("const payload = {", template_text)
+        self.assertIn("items: payloadItems,", template_text)
+        self.assertIn('window.openai.callTool("add_to_my_cart", payload)', template_text)
         self.assertIn("image_url: normalizeText(product?.imageUrl) || undefined", template_text)
         self.assertIn("image_url: normalizeText(itemMeta?.imageUrl) || undefined", template_text)
         self.assertIn('debugLog("add_to_cart_click"', template_text)
@@ -420,6 +437,138 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("const escapeHtml = (value) =>", template_text)
         self.assertIn("replaceAll(\"<\", \"&lt;\")", template_text)
         self.assertIn("replaceAll(\">\", \"&gt;\")", template_text)
+
+    def test_products_template_cart_modal_updates_via_update_payload_with_meta(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("const callSetCartItemQuantity = () =>", template_text)
+        self.assertIn('window.openai.callTool("add_to_my_cart", payload)', template_text)
+        self.assertIn("cart_session_id: cartSessionId || undefined", template_text)
+        self.assertIn("if (action === \"cart-increase\")", template_text)
+        self.assertIn("if (action === \"cart-decrease\")", template_text)
+        self.assertIn("if (action === \"cart-remove\")", template_text)
+        self.assertIn("writeLocalCart(payload);", template_text)
+        self.assertIn("enqueueCartSync(() => callSetCartItemQuantity())", template_text)
+
+    def test_products_template_blocks_checkout_when_cart_is_empty_or_below_30_mdl(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("const MIN_CHECKOUT_TOTAL_MDL = 30;", template_text)
+        self.assertIn("const { total, count } = ui.getCartSummary();", template_text)
+        self.assertIn("if (count <= 0)", template_text)
+        self.assertIn("if (total < MIN_CHECKOUT_TOTAL_MDL)", template_text)
+        self.assertIn("У вас пустая корзина", template_text)
+        self.assertIn("Минимальная сумма заказа 30 mdl", template_text)
+        self.assertIn('openWidgetByTemplate("ui://widget/products.html", "checkout_order", {', template_text)
+
+    def test_products_template_cart_modal_routes_inside_single_widget(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("const openWidgetByTemplate = async (template, fallbackTool, fallbackArgs) => {", template_text)
+        self.assertIn("const hasOpenWidget = typeof openaiApi?.openWidget === \"function\";", template_text)
+        self.assertIn("const hasCallTool = typeof openaiApi?.callTool === \"function\";", template_text)
+        self.assertIn('id="products-page-my-cart"', template_text)
+        self.assertIn('id="products-page-checkout"', template_text)
+        self.assertIn('id="products-page-search"', template_text)
+        self.assertIn('id="products-back-from-my-cart"', template_text)
+        self.assertIn('id="products-back-from-checkout"', template_text)
+        self.assertIn("const showInternalPage = (pageName) => {", template_text)
+        self.assertIn("showInternalPage(\"my-cart\")", template_text)
+        self.assertIn("showInternalPage(\"checkout\")", template_text)
+        self.assertIn("if (!hasOpenWidget)", template_text)
+        self.assertIn("via: \"internal-router\"", template_text)
+        self.assertIn("const fallbackToolName = normalizeText(fallbackTool);", template_text)
+        self.assertIn("const toolResult = await openaiApi.callTool(fallbackToolName, fallbackArgs || {});", template_text)
+        self.assertIn("const fallbackTemplate = normalizeText(structuredPayload?.widget?.open?.template);", template_text)
+        self.assertIn("if (!hasCallTool)", template_text)
+        self.assertIn("if (hasOpenWidget)", template_text)
+        self.assertNotIn("tool-no-openWidget", template_text)
+        self.assertIn("const replacePrevious = structuredPayload?.widget?.open?.replace_previous !== false;", template_text)
+        self.assertIn("await openaiApi.openWidget(fallbackTemplate, { replace_previous: replacePrevious });", template_text)
+        self.assertIn("await openaiApi.openWidget(template, { replace_previous: true });", template_text)
+        self.assertIn('openWidgetByTemplate("ui://widget/products.html", "my_cart", {', template_text)
+        self.assertIn('openWidgetByTemplate("ui://widget/products.html", "checkout_order", {', template_text)
+        self.assertIn("cart_session_id: cartSessionId || undefined", template_text)
+        self.assertIn("goToCartButton.addEventListener(\"click\",", template_text)
+        self.assertIn("checkoutButton.addEventListener(\"click\",", template_text)
+        self.assertIn('toolPage: "my-cart"', template_text)
+        self.assertIn('toolPage: "checkout"', template_text)
+
+    def test_products_template_has_tracking_page_for_order_status(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn('id="products-page-tracking"', template_text)
+        self.assertIn('id="products-back-from-tracking"', template_text)
+        self.assertIn('id="products-tracking-lookup"', template_text)
+        self.assertIn('id="products-tracking-count"', template_text)
+        self.assertIn('id="products-tracking-orders"', template_text)
+        self.assertIn("renderTrackingPage", template_text)
+        self.assertIn('showInternalPage("tracking")', template_text)
+        self.assertIn('return "tracking";', template_text)
+        self.assertIn("state.tracking = {", template_text)
+        self.assertIn("orders: Array.isArray(payload.orders) ? payload.orders : []", template_text)
+
+    def test_products_template_logs_cart_navigation_debug_events(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn('debugLog("cart_navigation_click"', template_text)
+        self.assertIn('debugLog("widget_open_attempt"', template_text)
+        self.assertIn('debugLog("widget_open_success"', template_text)
+        self.assertIn('debugLog("widget_open_fallback_tool"', template_text)
+        self.assertIn('debugLog("widget_open_error"', template_text)
+        self.assertIn('window.__APTEKA_WIDGET_LOGS__', template_text)
+
+    def test_products_template_disallows_zero_price_items_in_cart(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("if (!Number.isFinite(linePrice) || linePrice <= 0)", template_text)
+        self.assertIn("if (price <= 0) {", template_text)
+        self.assertIn("Number.isFinite(discountPrice) && discountPrice > 0", template_text)
+        self.assertIn("itemMeta.price = 0;", template_text)
+        self.assertIn("itemMeta.discountPrice = 0;", template_text)
+        self.assertIn("enqueueCartSync(() => callSetCartItemQuantity())", template_text)
+        self.assertIn("quantity < 0", template_text)
+        self.assertIn("quantity <= 0", template_text)
+
+    def test_products_template_keeps_zero_quantity_until_sync_for_cart_remove(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("payload[productId] = 0;", template_text)
+        self.assertIn("if (!Number.isFinite(quantity) || quantity <= 0)", template_text)
+        self.assertIn("if (!Number.isFinite(quantity) || quantity <= 0)", template_text)
+
+    def test_products_template_debounces_cart_quantity_sync_requests(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("let cartSyncTimerId = 0;", template_text)
+        self.assertIn("window.clearTimeout(cartSyncTimerId);", template_text)
+        self.assertIn("cartSyncTimerId = window.setTimeout(() => {", template_text)
+        self.assertIn("scheduleCartQuantitySync();", template_text)
+
+    def test_products_template_uses_error_toast_style_for_checkout_validation(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn('kind: "error"', template_text)
+        self.assertIn("products-toast-status-icon--error", template_text)
+        self.assertIn("statusIcon.textContent = payload.kind === \"error\" ? \"✕\" : \"✓\";", template_text)
+        self.assertIn("background: #fff1f2", template_text)
+        self.assertIn("color: #d11a2a", template_text)
+
+    def test_products_template_uses_friendly_cart_controls_style(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("border: none", template_text)
+        self.assertIn("background: transparent", template_text)
+        self.assertIn("color: #1f55d6", template_text)
+        self.assertIn("font-size: 32px", template_text)
+        self.assertIn("font-size: 22px", template_text)
+        self.assertIn("font-weight: 400", template_text)
+        self.assertIn("gap: 20px", template_text)
+        self.assertIn("align-self: center", template_text)
+        self.assertIn("grid-template-rows: auto auto", template_text)
+        self.assertIn("grid-column: 1 / 3", template_text)
+        self.assertIn("grid-row: 2", template_text)
+        self.assertIn("font-size: 13px", template_text)
+        self.assertIn("font-weight: 500", template_text)
+        self.assertIn("width: 16px", template_text)
+        self.assertIn("height: 16px", template_text)
+        self.assertIn("background: #9ba0ab", template_text)
+        self.assertIn("content.className = \"cart-modal-item-content\";", template_text)
+        self.assertIn("remove.textContent = \"✕\";", template_text)
+        self.assertIn("qty.append(decrease, value, increase);", template_text)
+        self.assertIn("article.append(image, content, lineTotal, qty, remove);", template_text)
+        self.assertIn("decrease.setAttribute(\"aria-label\",", template_text)
+        self.assertIn("increase.setAttribute(\"aria-label\",", template_text)
 
     def test_products_template_uses_safe_storage_fallback_for_cart_flow(self) -> None:
         template_text = self._read_products_bundle_text()
@@ -433,6 +582,12 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("const fromProductsState = state.products.find((entry) => entry.id === productId)", template_text)
         self.assertIn("const item = (cartItems[productId] && typeof cartItems[productId] === \"object\"", template_text)
         self.assertIn("name: normalizeText(item.name) || `Товар #${productId}`", template_text)
+
+    def test_products_template_renders_line_total_per_cart_item(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("lineTotalText: `Итого: ${toMoney(linePrice * quantity)}`", template_text)
+        self.assertIn("cart-modal-item-line-total", template_text)
+        self.assertIn("lineTotal.textContent = row.lineTotalText;", template_text)
 
     def test_products_template_syncs_local_cart_from_tool_payload(self) -> None:
         template_text = self._read_products_bundle_text()
