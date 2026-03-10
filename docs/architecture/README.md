@@ -31,6 +31,12 @@
 - Стили: `Tailwind CSS` (locally built) + локальные widget-стили.
 - Tailwind собирается локально из `app/widgets/styles/tailwind.input.css` в `app/widgets/styles/tailwind.css`.
 
+## Widget Routing
+- Основной Apps SDK widget template: `ui://widget/products.html`.
+- `search_products`, `add_to_my_cart`, `my_cart`, `checkout_order` и `track_order_status_ui` используют один и тот же widget и передают целевую внутреннюю страницу через `widget.open.page`.
+- `track_order_status_ui` открывает внутреннюю страницу `tracking` внутри `products.html`.
+- `support_knowledge_search` и `set_widget_theme` работают без отдельного widget template.
+
 ## Документация по слоям
 - Frontend стандарты: `docs/frontend/standards.md`
 - Frontend решения по зависимостям: `docs/frontend/decisions/README.md`

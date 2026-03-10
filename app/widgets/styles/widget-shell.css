@@ -108,6 +108,24 @@ body {
   line-height: 1.35;
 }
 
+.widget-back-button {
+  justify-self: start;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--widget-border);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--widget-text);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.widget-back-button:focus-visible {
+  outline: 2px solid #1f55d6;
+  outline-offset: 1px;
+}
+
 @media (max-width: 640px) {
   body {
     padding: 8px;

@@ -1,16 +1,34 @@
 ﻿(function () {
   const attach = (ctx) => {
-    const { state, dom, utils, cart, sync } = ctx;
-    const { track, leftArrow, rightArrow, cartBadge, cartModal, cartModalItems, cartModalTotal } = dom;
+    const { state, dom, utils, cart } = ctx;
+    const {
+      track,
+      leftArrow,
+      rightArrow,
+      cartBadge,
+      cartModal,
+      cartModalItems,
+      cartModalTotal,
+      pageCartItems,
+      pageCartTotal,
+      checkoutItems,
+      checkoutTotal,
+      pageSearch,
+      pageMyCart,
+      pageCheckout,
+      pageTracking,
+      trackingLookup,
+      trackingCount,
+      trackingOrders,
+    } = dom;
     const { normalizeText, escapeHtml, toMoney, computeDiscount, getFallbackImage, getPriceForCart } = utils;
     const { readLocalCartCount, readLocalCart, writeLocalCart, readCartItems } = cart;
 
-    const renderCartModal = () => {
-      if (!cartModalItems || !cartModalTotal) {
-        return;
-      }
+    const getCartSummary = (persistInvalidCleanup = false) => {
       const cartPayload = readLocalCart();
       const cartItems = readCartItems();
+      const nextCartPayload = { ...cartPayload };
+      const invalidProductIds = [];
       const rows = Object.entries(cartPayload)
         .map(([productId, rawQuantity]) => {
           const quantity = Number(rawQuantity);
@@ -20,81 +38,177 @@
           const fromProductsState = state.products.find((entry) => entry.id === productId) || null;
           const item = (cartItems[productId] && typeof cartItems[productId] === "object" ? cartItems[productId] : fromProductsState) || {};
           const linePrice = getPriceForCart(item);
+          if (!Number.isFinite(linePrice) || linePrice <= 0) {
+            invalidProductIds.push(productId);
+            return null;
+          }
           return {
             productId,
             quantity,
             name: normalizeText(item.name) || `Товар #${productId}`,
             manufacturer: normalizeText(item.manufacturer) || "Производитель не указан",
-            priceText: Number.isFinite(linePrice) && linePrice > 0 ? toMoney(linePrice) : "Цена уточняется",
+            priceText: toMoney(linePrice),
+            lineTotalText: `Итого: ${toMoney(linePrice * quantity)}`,
             imageUrl: normalizeText(item.imageUrl) || getFallbackImage(),
-            lineTotal: Number.isFinite(linePrice) ? linePrice * quantity : 0,
+            lineTotal: linePrice * quantity,
           };
         })
         .filter(Boolean);
 
+      if (persistInvalidCleanup && invalidProductIds.length) {
+        for (const productId of invalidProductIds) {
+          delete nextCartPayload[productId];
+        }
+        writeLocalCart(nextCartPayload);
+      }
+
+      const total = rows.reduce((sum, row) => sum + row.lineTotal, 0);
+      const count = rows.reduce((sum, row) => sum + row.quantity, 0);
+      return { rows, total, count };
+    };
+
+    const buildCartRowNode = (row, interactive) => {
+      const article = document.createElement("article");
+      article.className = "cart-modal-item";
+      article.dataset.productId = row.productId;
+
+      const image = document.createElement("img");
+      image.className = "cart-modal-item-image";
+      image.src = row.imageUrl;
+      image.alt = row.name;
+      image.loading = "lazy";
+      image.addEventListener("error", () => {
+        image.src = getFallbackImage();
+      });
+
+      const content = document.createElement("div");
+      content.className = "cart-modal-item-content";
+
+      const name = document.createElement("p");
+      name.className = "cart-modal-item-name";
+      name.textContent = row.name;
+
+      const manufacturer = document.createElement("p");
+      manufacturer.className = "cart-modal-item-meta";
+      manufacturer.textContent = row.manufacturer;
+
+      const price = document.createElement("p");
+      price.className = "cart-modal-item-price";
+      price.textContent = row.priceText;
+
+      const lineTotal = document.createElement("p");
+      lineTotal.className = "cart-modal-item-line-total";
+      lineTotal.textContent = row.lineTotalText;
+
+      content.append(name, manufacturer, price);
+
+      const qty = document.createElement("div");
+      qty.className = "cart-modal-qty";
+      const decrease = document.createElement("button");
+      decrease.className = "cart-modal-qty-button";
+      decrease.dataset.action = "cart-decrease";
+      decrease.textContent = "−";
+      decrease.setAttribute("aria-label", `Уменьшить количество ${row.name}`);
+      const value = document.createElement("span");
+      value.className = "cart-modal-qty-value";
+      value.textContent = String(row.quantity);
+      const increase = document.createElement("button");
+      increase.className = "cart-modal-qty-button";
+      increase.dataset.action = "cart-increase";
+      increase.textContent = "+";
+      increase.setAttribute("aria-label", `Увеличить количество ${row.name}`);
+
+      qty.append(decrease, value, increase);
+      const remove = document.createElement("button");
+      remove.className = "cart-modal-remove";
+      remove.dataset.action = "cart-remove";
+      remove.textContent = "✕";
+      remove.setAttribute("aria-label", `Удалить ${row.name} из корзины`);
+
+      if (!interactive) {
+        decrease.disabled = true;
+        increase.disabled = true;
+        remove.hidden = true;
+        remove.setAttribute("aria-hidden", "true");
+      }
+
+      article.append(image, content, lineTotal, qty, remove);
+
+      return article;
+    };
+
+    const renderCartRows = (container, totalNode, interactive) => {
+      if (!(container instanceof HTMLElement) || !(totalNode instanceof HTMLElement)) {
+        return;
+      }
+      const { rows, total } = getCartSummary(true);
       if (!rows.length) {
         const empty = document.createElement("p");
         empty.className = "cart-modal-empty";
         empty.textContent = "В корзине пока нет товаров";
-        cartModalItems.replaceChildren(empty);
-        cartModalTotal.textContent = "Итого: 0.00 MDL";
+        container.replaceChildren(empty);
+        totalNode.textContent = "Итого: 0.00 MDL";
         return;
       }
 
-      let total = 0;
-      const rowNodes = rows.map((row) => {
-        total += row.lineTotal;
+      const rowNodes = rows.map((row) => buildCartRowNode(row, interactive));
+      container.replaceChildren(...rowNodes);
+      totalNode.textContent = `Итого: ${toMoney(total)}`;
+    };
 
-        const article = document.createElement("article");
-        article.className = "cart-modal-item";
-        article.dataset.productId = row.productId;
+    const renderCartModal = () => {
+      renderCartRows(cartModalItems, cartModalTotal, true);
+    };
 
-        const image = document.createElement("img");
-        image.className = "cart-modal-item-image";
-        image.src = row.imageUrl;
-        image.alt = row.name;
-        image.loading = "lazy";
-        image.addEventListener("error", () => {
-          image.src = getFallbackImage();
-        });
+    const renderPageCart = () => {
+      renderCartRows(pageCartItems, pageCartTotal, true);
+    };
 
-        const content = document.createElement("div");
+    const renderCheckoutSummary = () => {
+      renderCartRows(checkoutItems, checkoutTotal, false);
+    };
 
-        const name = document.createElement("p");
-        name.className = "cart-modal-item-name";
-        name.textContent = row.name;
-
-        const manufacturer = document.createElement("p");
-        manufacturer.className = "cart-modal-item-meta";
-        manufacturer.textContent = row.manufacturer;
-
-        const price = document.createElement("p");
-        price.className = "cart-modal-item-price";
-        price.textContent = row.priceText;
-
-        content.append(name, manufacturer, price);
-
-        const qty = document.createElement("div");
-        qty.className = "cart-modal-qty";
-        const decrease = document.createElement("button");
-        decrease.className = "cart-modal-qty-button";
-        decrease.dataset.action = "cart-decrease";
-        decrease.textContent = "−";
-        const value = document.createElement("span");
-        value.className = "cart-modal-qty-value";
-        value.textContent = String(row.quantity);
-        const increase = document.createElement("button");
-        increase.className = "cart-modal-qty-button";
-        increase.dataset.action = "cart-increase";
-        increase.textContent = "+";
-
-        qty.append(decrease, value, increase);
-        article.append(image, content, qty);
-        return article;
+    const renderTrackingPage = () => {
+      if (
+        !(trackingLookup instanceof HTMLElement) ||
+        !(trackingCount instanceof HTMLElement) ||
+        !(trackingOrders instanceof HTMLElement)
+      ) {
+        return;
+      }
+      const trackingState = state.tracking && typeof state.tracking === "object" ? state.tracking : {};
+      const lookup = normalizeText(trackingState.lookup);
+      const count = Number(trackingState.count) || 0;
+      const orders = Array.isArray(trackingState.orders) ? trackingState.orders : [];
+      trackingLookup.textContent = lookup ? `Запрос: ${lookup}` : "";
+      trackingCount.textContent = `Найдено заказов: ${count}`;
+      if (!orders.length) {
+        const empty = document.createElement("p");
+        empty.className = "cart-modal-empty";
+        empty.textContent = "Заказы не найдены";
+        trackingOrders.replaceChildren(empty);
+        return;
+      }
+      const nodes = orders.map((order, index) => {
+        const card = document.createElement("article");
+        card.className = "products-tracking-order";
+        const title = document.createElement("p");
+        title.className = "products-tracking-order-title";
+        title.textContent =
+          normalizeText(order.order_number) ||
+          normalizeText(order.orderNumber) ||
+          normalizeText(order.id) ||
+          `Заказ #${index + 1}`;
+        const status = document.createElement("p");
+        status.className = "products-tracking-order-status";
+        status.textContent = normalizeText(order.status) || "Статус не указан";
+        const hint = document.createElement("p");
+        hint.className = "products-tracking-order-hint";
+        hint.textContent = normalizeText(order.status_hint) || "Детали статуса недоступны";
+        card.append(title, status, hint);
+        return card;
       });
-
-      cartModalItems.replaceChildren(...rowNodes);
-      cartModalTotal.textContent = `Итого: ${toMoney(total)}`;
+      trackingOrders.replaceChildren(...nodes);
     };
 
     const toggleCartModal = (nextState) => {
@@ -105,6 +219,31 @@
       cartModal.hidden = !shouldOpen;
       if (shouldOpen) {
         renderCartModal();
+      }
+    };
+
+    const showInternalPage = (pageName) => {
+      const normalized = normalizeText(pageName).toLowerCase();
+      if (pageSearch instanceof HTMLElement) {
+        pageSearch.hidden = normalized !== "search";
+      }
+      if (pageMyCart instanceof HTMLElement) {
+        pageMyCart.hidden = normalized !== "my-cart";
+      }
+      if (pageCheckout instanceof HTMLElement) {
+        pageCheckout.hidden = normalized !== "checkout";
+      }
+      if (pageTracking instanceof HTMLElement) {
+        pageTracking.hidden = normalized !== "tracking";
+      }
+      if (normalized === "my-cart") {
+        renderPageCart();
+      }
+      if (normalized === "checkout") {
+        renderCheckoutSummary();
+      }
+      if (normalized === "tracking") {
+        renderTrackingPage();
       }
     };
 
@@ -248,10 +387,15 @@
     };
 
     ctx.ui.renderCartModal = renderCartModal;
+    ctx.ui.renderPageCart = renderPageCart;
+    ctx.ui.renderCheckoutSummary = renderCheckoutSummary;
+    ctx.ui.renderTrackingPage = renderTrackingPage;
     ctx.ui.toggleCartModal = toggleCartModal;
+    ctx.ui.showInternalPage = showInternalPage;
     ctx.ui.renderCartBadge = renderCartBadge;
     ctx.ui.updateCarouselControls = updateCarouselControls;
     ctx.ui.renderProducts = renderProducts;
+    ctx.ui.getCartSummary = () => getCartSummary(true);
   };
 
   window.ProductsRender = {

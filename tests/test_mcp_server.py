@@ -170,6 +170,48 @@ class MCPServerTests(unittest.TestCase):
             "https://subgerminal-yevette-lactogenic.ngrok-free.dev",
         )
 
+    def test_tools_list_uses_products_widget_for_cart_and_checkout_tools(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {"jsonrpc": "2.0", "id": 21, "method": "tools/list", "params": {}},
+            registry=registry,
+        )
+
+        tool_by_name = {tool["name"]: tool for tool in response["result"]["tools"]}
+        self.assertEqual(tool_by_name["my_cart"]["outputTemplate"], "ui://widget/products.html")
+        self.assertEqual(tool_by_name["checkout_order"]["outputTemplate"], "ui://widget/products.html")
+        self.assertEqual(
+            tool_by_name["my_cart"]["_meta"]["openai/outputTemplate"],
+            "ui://widget/products.html",
+        )
+        self.assertEqual(
+            tool_by_name["checkout_order"]["_meta"]["openai/outputTemplate"],
+            "ui://widget/products.html",
+        )
+
+    def test_tools_list_uses_products_widget_for_tracking_and_no_widget_for_faq_theme(self) -> None:
+        registry = create_tool_registry()
+
+        response = handle_rpc_request(
+            {"jsonrpc": "2.0", "id": 22, "method": "tools/list", "params": {}},
+            registry=registry,
+        )
+
+        tool_by_name = {tool["name"]: tool for tool in response["result"]["tools"]}
+        self.assertEqual(
+            tool_by_name["track_order_status_ui"]["outputTemplate"],
+            "ui://widget/products.html",
+        )
+        self.assertEqual(
+            tool_by_name["track_order_status_ui"]["_meta"]["openai/outputTemplate"],
+            "ui://widget/products.html",
+        )
+        self.assertNotIn("outputTemplate", tool_by_name["support_knowledge_search"])
+        self.assertNotIn("outputTemplate", tool_by_name["set_widget_theme"])
+        self.assertNotIn("openai/outputTemplate", tool_by_name["support_knowledge_search"]["_meta"])
+        self.assertNotIn("openai/outputTemplate", tool_by_name["set_widget_theme"]["_meta"])
+
     def test_tools_list_uses_widget_domain_from_env(self) -> None:
         _reset_server_caches_for_tests()
         get_settings.cache_clear()
@@ -431,6 +473,7 @@ class MCPServerTests(unittest.TestCase):
         )
         self.assertIn("result", response)
         resources = response["result"]["resources"]
+        self.assertEqual(len(resources), 1)
         products_resource = next(
             resource for resource in resources if resource["uri"] == "ui://widget/products.html"
         )
@@ -739,6 +782,14 @@ class MCPServerTests(unittest.TestCase):
         mocked_tracking.assert_called_once_with("ORD-123")
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["count"], 1)
+        self.assertEqual(
+            response["result"]["structuredContent"]["widget"]["open"]["template"],
+            "ui://widget/products.html",
+        )
+        self.assertEqual(
+            response["result"]["structuredContent"]["widget"]["open"]["page"],
+            "tracking",
+        )
 
     def test_tools_call_track_order_status_uses_ttl_cache(self) -> None:
         registry = create_tool_registry()
@@ -856,6 +907,10 @@ class MCPServerTests(unittest.TestCase):
         mocked_my_cart.assert_called_once_with(cart_session_id="sess-1")
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["cart_session_id"], "sess-1")
+        self.assertEqual(
+            response["result"]["structuredContent"]["widget"]["open"]["template"],
+            "ui://widget/products.html",
+        )
 
     def test_tools_call_add_to_my_cart_delegates_to_cart_tool(self) -> None:
         registry = create_tool_registry()
@@ -1161,6 +1216,10 @@ class MCPServerTests(unittest.TestCase):
         )
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(response["result"]["structuredContent"]["status"], "delivery_method_selection")
+        self.assertEqual(
+            response["result"]["structuredContent"]["widget"]["open"]["template"],
+            "ui://widget/products.html",
+        )
 
     def test_checkout_order_schema_contains_courier_address_and_contact(self) -> None:
         registry = create_tool_registry()

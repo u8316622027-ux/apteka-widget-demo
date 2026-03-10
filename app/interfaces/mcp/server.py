@@ -605,13 +605,16 @@ def _widget_resource_index() -> dict[str, dict[str, Any]]:
             connect_domains = []
         normalized_resource_domains = [str(domain).strip() for domain in resource_domains if str(domain).strip()]
         normalized_connect_domains = [str(domain).strip() for domain in connect_domains if str(domain).strip()]
-        mapping[uri] = {
-            "path": relative_path,
-            "description": tool.description,
-            "domain": ui_domain,
-            "resource_domains": normalized_resource_domains,
-            "connect_domains": normalized_connect_domains,
-        }
+        mapping.setdefault(
+            uri,
+            {
+                "path": relative_path,
+                "description": tool.description,
+                "domain": ui_domain,
+                "resource_domains": normalized_resource_domains,
+                "connect_domains": normalized_connect_domains,
+            },
+        )
     return mapping
 
 

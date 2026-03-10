@@ -70,6 +70,12 @@ class DocsConsistencyTests(unittest.TestCase):
         self.assertIn("docs/frontend/standards.md", content)
         self.assertIn("docs/backend/README.md", content)
 
+    def test_architecture_doc_describes_single_products_widget_routing(self) -> None:
+        content = self._read("docs/architecture/README.md")
+        self.assertIn("`ui://widget/products.html`", content)
+        self.assertIn("`track_order_status_ui` открывает внутреннюю страницу `tracking`", content)
+        self.assertIn("`support_knowledge_search` и `set_widget_theme` работают без отдельного widget template", content)
+
 
 if __name__ == "__main__":
     unittest.main()

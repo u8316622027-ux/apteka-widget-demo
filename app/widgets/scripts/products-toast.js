@@ -39,7 +39,10 @@
 
       const statusIcon = document.createElement("span");
       statusIcon.className = "products-toast-status-icon";
-      statusIcon.textContent = "✓";
+      if (payload.kind === "error") {
+        statusIcon.classList.add("products-toast-status-icon--error");
+      }
+      statusIcon.textContent = payload.kind === "error" ? "✕" : "✓";
 
       const statusText = document.createElement("span");
       statusText.textContent = payload.title;
@@ -114,6 +117,7 @@
         title: String(payload?.title || "Успешно"),
         message: String(payload?.message || "Успешно добавлен в корзину"),
         durationMs: Number(payload?.durationMs) > 0 ? Number(payload.durationMs) : DEFAULT_DURATION_MS,
+        kind: String(payload?.kind || "").toLowerCase() === "error" ? "error" : "success",
       });
       showFromQueue();
     };
