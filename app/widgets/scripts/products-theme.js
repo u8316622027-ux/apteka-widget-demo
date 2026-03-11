@@ -4,6 +4,7 @@
     const THEME_VALUE_KEY = "apteka_widget_theme_value";
     const { root, utils } = ctx;
     const { normalizeText, debugLog } = utils;
+    const indicator = document.getElementById("theme-debug-indicator") || null;
 
     const normalizeTheme = (value) => {
       const normalized = normalizeText(value).toLowerCase();
@@ -52,11 +53,34 @@
       return "light";
     };
 
+    const resolveIndicatorValue = (mode, theme) => {
+      const isAuto = mode === "auto";
+      const isDark = theme === "dark";
+      if (isAuto) {
+        return isDark ? "1.2" : "1.1";
+      }
+      return isDark ? "2.2" : "2.1";
+    };
+
+    const updateIndicator = (mode, theme) => {
+      if (!(indicator instanceof HTMLElement)) {
+        return;
+      }
+      const value = resolveIndicatorValue(mode, theme);
+      indicator.textContent = value;
+      indicator.dataset.themeMode = mode;
+      indicator.dataset.themeValue = theme;
+    };
+
     const applyTheme = (theme) => {
       const normalized = normalizeTheme(theme) || "light";
       root.setAttribute("data-theme", normalized);
       document.documentElement.setAttribute("data-theme", normalized);
       writeStorage(THEME_VALUE_KEY, normalized);
+      updateIndicator(
+        normalizeText(readStorage(THEME_MODE_KEY)) || "auto",
+        normalized,
+      );
       debugLog("theme_applied", { theme: normalized });
     };
 
