@@ -141,8 +141,78 @@ def test_handle_jsonrpc_payload_logs_request_and_response(
         captured.append((request_payload, response_payload))
 
     monkeypatch.setattr(mcp_server, "_log_mcp_request_safe", _capture)
-    request_payload = {"jsonrpc": "2.0", "id": "1", "method": "initialize"}
+    registry = {
+        "search_products": tool_registry.ToolDefinition(
+            name="search_products",
+            description="demo",
+            input_schema={"type": "object", "properties": {"query": {"type": "string"}}},
+            handler=lambda _: {"products": []},
+            output_template="",
+            ui={},
+        )
+    }
+    request_payload = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "tools/call",
+        "params": {"name": "search_products", "arguments": {"query": "aspirin"}},
+    }
 
-    response = mcp_server.handle_jsonrpc_payload(request_payload)
+    response = mcp_server.handle_jsonrpc_payload(request_payload, registry=registry)
 
     assert captured == [(request_payload, response)]
+
+
+def test_log_mcp_request_safe_includes_error_message(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def _boom(*_: object, **__: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mcp_server, "log_mcp_request", _boom)
+    caplog.set_level("WARNING")
+
+    mcp_server._log_mcp_request_safe({"jsonrpc": "2.0"}, {"ok": True})
+
+    assert "mcp_request_log_failed" in caplog.text
+    assert "boom" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("request_payload", "should_log"),
+    [
+        ({"jsonrpc": "2.0", "id": "1", "method": "initialize"}, False),
+        (
+            {
+                "jsonrpc": "2.0",
+                "id": "1",
+                "method": "tools/call",
+                "params": {"name": "search_products", "arguments": {"query": ""}},
+            },
+            False,
+        ),
+        (
+            {
+                "jsonrpc": "2.0",
+                "id": "1",
+                "method": "tools/call",
+                "params": {"name": "support_knowledge_search", "arguments": {"query": "help"}},
+            },
+            True,
+        ),
+        (
+            {
+                "jsonrpc": "2.0",
+                "id": "1",
+                "method": "tools/call",
+                "params": {"name": "unknown_tool", "arguments": {"query": "abc"}},
+            },
+            False,
+        ),
+    ],
+)
+def test_should_log_mcp_request_filters_tools(
+    request_payload: dict[str, object], should_log: bool
+) -> None:
+    assert mcp_server._should_log_mcp_request(request_payload) is should_log

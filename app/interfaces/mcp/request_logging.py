@@ -61,6 +61,7 @@ class SupabaseMcpRequestLogger:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "Prefer": "return=minimal",
+                "User-Agent": "Mozilla/5.0",
                 "apikey": self._api_key,
                 "Authorization": f"Bearer {self._api_key}",
             },

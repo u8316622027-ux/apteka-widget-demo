@@ -55,6 +55,7 @@ def test_supabase_mcp_request_logger_posts_payload(monkeypatch: pytest.MonkeyPat
     assert headers["authorization"] == "Bearer test-key"
     assert headers["content-type"] == "application/json"
     assert headers["prefer"] == "return=minimal"
+    assert headers["user-agent"] == "Mozilla/5.0"
 
 
 def test_supabase_mcp_request_logger_surfaces_http_error(
