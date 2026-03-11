@@ -93,7 +93,15 @@ class WidgetTemplateTests(unittest.TestCase):
         template_text = self._read_products_bundle_text()
         self.assertIn("scroll-snap-type: x mandatory", template_text)
         self.assertIn(':root[data-theme="light"]', template_text)
-        self.assertIn("--shadow-card: 0 10px 22px rgba(14, 33, 71, 0.14)", template_text)
+        self.assertIn(
+            "--shadow-card: 0 12px 28px rgba(21, 41, 86, 0.18)",
+            template_text,
+        )
+
+    def test_products_template_mobile_toolbar_is_single_row(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("@media (max-width: 520px)", template_text)
+        self.assertIn("grid-template-columns: 120px 1fr 44px", template_text)
 
 
 if __name__ == "__main__":
