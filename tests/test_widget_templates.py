@@ -99,6 +99,10 @@ class WidgetTemplateTests(unittest.TestCase):
         )
         self.assertIn("padding-bottom: 12px", template_text)
 
+    def test_products_template_scales_product_images(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("transform: scale(1.05)", template_text)
+
     def test_products_template_mobile_toolbar_is_single_row(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn("@media (max-width: 520px)", template_text)

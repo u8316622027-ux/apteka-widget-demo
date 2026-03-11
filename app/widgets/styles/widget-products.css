@@ -242,6 +242,8 @@ body {
   border-radius: 10px;
   background: var(--bg-muted);
   padding: 2px;
+  transform: scale(1.05);
+  transform-origin: center;
   box-sizing: border-box;
 }
 
