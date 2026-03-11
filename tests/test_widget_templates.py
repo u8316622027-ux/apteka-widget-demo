@@ -93,8 +93,14 @@ class WidgetTemplateTests(unittest.TestCase):
         template_text = self._read_products_bundle_text()
         self.assertIn("scroll-snap-type: x mandatory", template_text)
         self.assertIn(':root[data-theme="light"]', template_text)
+        self.assertIn("overflow: visible", template_text)
+
+    def test_products_template_images_fill_card_area(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("transform: scale(1.06)", template_text)
+        self.assertIn("height: 230px", template_text)
         self.assertIn(
-            "--shadow-card: 0 12px 28px rgba(21, 41, 86, 0.18)",
+            "grid-template-rows: 230px 66px 24px 22px 40px 38px",
             template_text,
         )
 
