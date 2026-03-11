@@ -87,7 +87,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             description="Set storefront widget theme (light, dark, or auto).",
             input_schema={
                 "type": "object",
-                "properties": {"theme": {"type": "string"}},
+                "properties": {"theme": {"type": "string", "enum": ["light", "dark", "auto"]}},
             },
             handler=_set_widget_theme_handler,
             output_template="",

@@ -38,6 +38,16 @@ def test_tool_descriptor_readonly_annotations() -> None:
     assert "annotations" not in theme_payload
 
 
+def test_theme_tool_schema_enforces_allowed_values() -> None:
+    registry = tool_registry.create_tool_registry()
+    theme_payload = tool_registry.serialize_tool_definition(registry["set_widget_theme"])
+
+    theme_schema = theme_payload["inputSchema"]["properties"]["theme"]
+
+    assert theme_schema["type"] == "string"
+    assert theme_schema["enum"] == ["light", "dark", "auto"]
+
+
 def test_widget_ui_config_includes_resource_and_connect_domains(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
