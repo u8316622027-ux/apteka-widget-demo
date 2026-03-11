@@ -31,21 +31,14 @@ def test_tool_descriptor_readonly_annotations() -> None:
     registry = tool_registry.create_tool_registry()
     search_payload = tool_registry.serialize_tool_definition(registry["search_products"])
     support_payload = tool_registry.serialize_tool_definition(registry["support_knowledge_search"])
-    theme_payload = tool_registry.serialize_tool_definition(registry["set_widget_theme"])
 
     assert search_payload["annotations"]["readOnlyHint"] is True
     assert support_payload["annotations"]["readOnlyHint"] is True
-    assert "annotations" not in theme_payload
 
 
-def test_theme_tool_schema_enforces_allowed_values() -> None:
+def test_theme_tool_is_removed() -> None:
     registry = tool_registry.create_tool_registry()
-    theme_payload = tool_registry.serialize_tool_definition(registry["set_widget_theme"])
-
-    theme_schema = theme_payload["inputSchema"]["properties"]["theme"]
-
-    assert theme_schema["type"] == "string"
-    assert theme_schema["enum"] == ["light", "dark", "auto"]
+    assert "set_widget_theme" not in registry
 
 
 def test_widget_ui_config_includes_resource_and_connect_domains(

@@ -16,7 +16,7 @@ def test_create_tool_registry_uses_base_handlers() -> None:
     base_registry = tool_registry.create_tool_registry()
     server_registry = mcp_server.create_tool_registry()
 
-    for name in ("search_products", "support_knowledge_search", "set_widget_theme"):
+    for name in ("search_products", "support_knowledge_search"):
         assert server_registry[name].handler is base_registry[name].handler
 
 

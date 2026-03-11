@@ -81,22 +81,6 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "invoked": "Support knowledge found.",
             },
         ),
-        "set_widget_theme": ToolDefinition(
-            name="set_widget_theme",
-            title="Set widget theme",
-            description="Set storefront widget theme (light, dark, or auto).",
-            input_schema={
-                "type": "object",
-                "properties": {"theme": {"type": "string", "enum": ["light", "dark", "auto"]}},
-            },
-            handler=_set_widget_theme_handler,
-            output_template="",
-            ui=widget_ui_config,
-            tool_invocation={
-                "invoking": "Updating widget theme…",
-                "invoked": "Widget theme updated.",
-            },
-        ),
     }
 
 
@@ -208,29 +192,3 @@ def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, An
     limit_value = arguments.get("limit")
     limit = int(limit_value) if limit_value is not None else None
     return faq_search(query, limit=limit)
-
-
-def _set_widget_theme_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    raw_theme = str(arguments.get("theme", "default")).strip().lower()
-    if raw_theme.startswith("dark") or raw_theme.startswith("тём"):
-        normalized = "dark"
-    elif raw_theme.startswith("light") or raw_theme.startswith("свет"):
-        normalized = "light"
-    elif raw_theme in {"auto", "automatic", "default", "system", ""}:
-        normalized = "auto"
-    else:
-        normalized = "auto"
-    is_auto = normalized == "auto"
-    theme_mode = "auto" if is_auto else "manual"
-    theme_value = normalized
-    return {
-        "status": "applied",
-        "theme": theme_value,
-        "theme_mode": theme_mode,
-        "auto_disabled": not is_auto,
-        "assistant_notice": (
-            "Автоподбор темы отключён. Тема зафиксирована, но её всегда можно сменить позже."
-            if not is_auto
-            else "Автоподбор темы включён. Цвет будет меняться автоматически."
-        ),
-    }
