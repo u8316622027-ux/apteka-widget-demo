@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from urllib.error import HTTPError
 
 import pytest
 
@@ -53,3 +55,26 @@ def test_supabase_mcp_request_logger_posts_payload(monkeypatch: pytest.MonkeyPat
     assert headers["authorization"] == "Bearer test-key"
     assert headers["content-type"] == "application/json"
     assert headers["prefer"] == "return=minimal"
+
+
+def test_supabase_mcp_request_logger_surfaces_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_urlopen(request, timeout=0):  # type: ignore[no-untyped-def]
+        raise HTTPError(
+            request.full_url,
+            401,
+            "Unauthorized",
+            hdrs=None,
+            fp=BytesIO(b'{"message":"invalid token"}'),
+        )
+
+    logger = SupabaseMcpRequestLogger(
+        base_url="https://supabase.example",
+        api_key="bad-key",
+        table_name="mcp_request_logs",
+        urlopen=_fake_urlopen,
+    )
+
+    with pytest.raises(RuntimeError, match="Supabase log failed: 401 Unauthorized"):
+        logger.log_request({"method": "tools/list"}, {"result": {"tools": []}})

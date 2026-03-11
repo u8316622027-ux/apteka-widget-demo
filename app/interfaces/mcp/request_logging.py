@@ -7,6 +7,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import HTTPError
 from urllib.request import Request
 from urllib.request import urlopen as default_urlopen
 
@@ -64,8 +65,19 @@ class SupabaseMcpRequestLogger:
                 "Authorization": f"Bearer {self._api_key}",
             },
         )
-        with self._urlopen(request, timeout=self._timeout) as _:
-            return None
+        try:
+            with self._urlopen(request, timeout=self._timeout) as _:
+                return None
+        except HTTPError as exc:
+            error_body = ""
+            try:
+                error_body = exc.read().decode("utf-8", errors="ignore")
+            except Exception:  # noqa: BLE001
+                error_body = ""
+            message = f"Supabase log failed: {exc.code} {exc.reason}"
+            if error_body:
+                message = f"{message} {error_body}"
+            raise RuntimeError(message) from exc
 
 
 @lru_cache(maxsize=1)
