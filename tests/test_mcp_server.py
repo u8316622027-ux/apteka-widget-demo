@@ -130,3 +130,19 @@ def test_parse_content_length_rejects_missing() -> None:
 
     with pytest.raises(ValueError, match="Content-Length"):
         mcp_server._parse_content_length(headers)
+
+
+def test_handle_jsonrpc_payload_logs_request_and_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[tuple[object, object]] = []
+
+    def _capture(request_payload: object, response_payload: object) -> None:
+        captured.append((request_payload, response_payload))
+
+    monkeypatch.setattr(mcp_server, "_log_mcp_request_safe", _capture)
+    request_payload = {"jsonrpc": "2.0", "id": "1", "method": "initialize"}
+
+    response = mcp_server.handle_jsonrpc_payload(request_payload)
+
+    assert captured == [(request_payload, response)]

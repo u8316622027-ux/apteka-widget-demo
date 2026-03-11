@@ -20,6 +20,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from app.core.config import get_settings
+from app.interfaces.mcp.request_logging import log_mcp_request
 from app.interfaces.mcp.tool_registry import (
     ToolDefinition,
     decorate_tool_result,
@@ -381,26 +382,42 @@ def handle_jsonrpc_payload(
 
     if isinstance(request_payload, list):
         if not request_payload:
-            return _rpc_error(None, -32600, "Invalid Request")
+            response = _rpc_error(None, -32600, "Invalid Request")
+            _log_mcp_request_safe(request_payload, response)
+            return response
 
         responses: list[dict[str, Any]] = []
         for item in request_payload:
             if isinstance(item, dict) and "id" not in item:
                 handle_rpc_request(item, registry=registry, http_request_id=http_request_id)
+                _log_mcp_request_safe(item, None)
                 continue
 
             response_payload = handle_rpc_request(
                 item, registry=registry, http_request_id=http_request_id
             )
+            _log_mcp_request_safe(item, response_payload)
             responses.append(response_payload)
 
         return responses or None
 
     if isinstance(request_payload, dict) and "id" not in request_payload:
         handle_rpc_request(request_payload, registry=registry, http_request_id=http_request_id)
+        _log_mcp_request_safe(request_payload, None)
         return None
 
-    return handle_rpc_request(request_payload, registry=registry, http_request_id=http_request_id)
+    response = handle_rpc_request(
+        request_payload, registry=registry, http_request_id=http_request_id
+    )
+    _log_mcp_request_safe(request_payload, response)
+    return response
+
+
+def _log_mcp_request_safe(request_payload: Any, response_payload: Any) -> None:
+    try:
+        log_mcp_request(request_payload, response_payload)
+    except Exception:  # noqa: BLE001
+        logger.warning("mcp_request_log_failed", exc_info=False)
 
 
 def _rpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
