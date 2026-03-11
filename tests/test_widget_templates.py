@@ -74,10 +74,10 @@ class WidgetTemplateTests(unittest.TestCase):
         html_text = Path("app/widgets/products.html").read_text(encoding="utf-8")
         self.assertIn('src="./scripts/products-theme.js"', html_text)
 
-    def test_products_template_includes_theme_debug_indicator(self) -> None:
+    def test_products_template_excludes_theme_debug_indicator(self) -> None:
         template_text = self._read_products_bundle_text()
-        self.assertIn('id="theme-debug-indicator"', template_text)
-        self.assertIn(".theme-debug-indicator", template_text)
+        self.assertNotIn('id="theme-debug-indicator"', template_text)
+        self.assertNotIn(".theme-debug-indicator", template_text)
 
     def test_products_template_polls_for_theme_updates(self) -> None:
         template_text = self._read_products_bundle_text()

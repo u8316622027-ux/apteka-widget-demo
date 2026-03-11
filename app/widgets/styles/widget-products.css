@@ -59,24 +59,6 @@ body {
   position: relative;
 }
 
-.theme-debug-indicator {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 2147483647;
-  padding: 10px 16px;
-  border-radius: 12px;
-  background: rgba(9, 15, 30, 0.72);
-  color: #ffffff;
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-align: center;
-  pointer-events: none;
-  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
-}
-
 .theme-notice {
   position: fixed;
   top: calc(50% + 56px);
