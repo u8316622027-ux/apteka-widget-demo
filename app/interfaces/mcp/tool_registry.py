@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from app.core.config import get_settings
@@ -21,6 +21,10 @@ class ToolDefinition:
     handler: Callable[[dict[str, Any]], dict[str, Any]]
     output_template: str
     ui: dict[str, Any]
+    title: str | None = None
+    annotations: dict[str, Any] = field(default_factory=dict)
+    tool_invocation: dict[str, str] = field(default_factory=dict)
+    visibility: str = "public"
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
@@ -30,6 +34,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
     return {
         "search_products": ToolDefinition(
             name="search_products",
+            title="Search products",
             description=(
                 "Search products by free-text query via Stage API. "
                 "Args: query and optional limit. "
@@ -46,9 +51,15 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             handler=_search_products_handler,
             output_template="ui://widget/products.html",
             ui=widget_ui_config,
+            annotations={"readOnlyHint": True},
+            tool_invocation={
+                "invoking": "Searching products…",
+                "invoked": "Products found.",
+            },
         ),
         "support_knowledge_search": ToolDefinition(
             name="support_knowledge_search",
+            title="Search support knowledge",
             description=(
                 "Semantic FAQ knowledge search for support questions: order placement, "
                 "work schedule, app capabilities, payment, delivery, and account usage."
@@ -64,9 +75,15 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             handler=_support_knowledge_search_handler,
             output_template="",
             ui=widget_ui_config,
+            annotations={"readOnlyHint": True},
+            tool_invocation={
+                "invoking": "Searching support knowledge…",
+                "invoked": "Support knowledge found.",
+            },
         ),
         "set_widget_theme": ToolDefinition(
             name="set_widget_theme",
+            title="Set widget theme",
             description="Set storefront widget theme (light, dark, or auto).",
             input_schema={
                 "type": "object",
@@ -75,27 +92,47 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             handler=_set_widget_theme_handler,
             output_template="",
             ui=widget_ui_config,
+            tool_invocation={
+                "invoking": "Updating widget theme…",
+                "invoked": "Widget theme updated.",
+            },
         ),
     }
 
 
 def serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
     ui_domain = str(tool.ui.get("domain") or "").strip()
+    ui_csp = tool.ui.get("csp") if isinstance(tool.ui.get("csp"), dict) else {}
+    connect_domains = ui_csp.get("connectDomains")
+    resource_domains = ui_csp.get("resourceDomains")
+    if not isinstance(connect_domains, list):
+        connect_domains = []
+    if not isinstance(resource_domains, list):
+        resource_domains = []
     payload = {
         "name": tool.name,
+        "title": tool.title or tool.name,
         "description": tool.description,
         "inputSchema": tool.input_schema,
         "ui": tool.ui,
         "_meta": {
-            "openai/widgetAccessible": True,
-            "openai/widgetCSP": tool.ui.get("csp") or {},
+            "openai/widgetDomain": ui_domain,
+            "openai/widgetCSP": {
+                "connect_domains": list(connect_domains),
+                "resource_domains": list(resource_domains),
+            },
         },
     }
-    if not ui_domain:
-        payload["_meta"]["openai/widgetDomain"] = ""
+    if tool.tool_invocation:
+        if tool.tool_invocation.get("invoking"):
+            payload["_meta"]["openai/toolInvocation/invoking"] = tool.tool_invocation["invoking"]
+        if tool.tool_invocation.get("invoked"):
+            payload["_meta"]["openai/toolInvocation/invoked"] = tool.tool_invocation["invoked"]
     if tool.output_template:
         payload["outputTemplate"] = tool.output_template
         payload["_meta"]["openai/outputTemplate"] = tool.output_template
+    if tool.annotations:
+        payload["annotations"] = dict(tool.annotations)
     return payload
 
 
@@ -150,7 +187,6 @@ def _build_widget_ui_config() -> dict[str, Any]:
         widget_domain,
         apteka_base_url,
         "https://www.apteka.md",
-        "https://cdn.jsdelivr.net",
     ]
     return {
         "domain": widget_domain,
