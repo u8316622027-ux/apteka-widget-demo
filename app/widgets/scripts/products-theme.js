@@ -127,6 +127,14 @@
       }
       const mode = normalizeText(payload.theme_mode || payload.mode);
       const theme = normalizeTheme(payload.theme);
+      if (payload.auto_disabled === false) {
+        setAutoTheme();
+        return;
+      }
+      if (payload.auto_disabled === true && theme) {
+        setManualTheme(theme);
+        return;
+      }
       if (mode === "auto") {
         setAutoTheme();
         return;

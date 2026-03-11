@@ -145,6 +145,41 @@
       if (!theme || typeof theme.updateFromPayload !== "function") {
         return;
       }
+      const extractThemePayloadFromGlobals = () => {
+        const payload = extractInitialToolPayload();
+        if (!payload || typeof payload !== "object") {
+          return null;
+        }
+        return isThemePayload(payload) ? payload : null;
+      };
+
+      const getThemeSignature = (payload) => {
+        if (!payload || typeof payload !== "object") {
+          return "";
+        }
+        const themeValue = normalizeText(payload.theme);
+        const modeValue = normalizeText(payload.theme_mode || payload.mode);
+        const autoValue =
+          typeof payload.auto_disabled === "boolean"
+            ? String(payload.auto_disabled)
+            : "";
+        return [themeValue, modeValue, autoValue].join("|");
+      };
+
+      let lastThemeSignature = "";
+      const pollThemeUpdates = () => {
+        const payload = extractThemePayloadFromGlobals();
+        if (!payload) {
+          return;
+        }
+        const signature = getThemeSignature(payload);
+        if (!signature || signature === lastThemeSignature) {
+          return;
+        }
+        lastThemeSignature = signature;
+        theme.updateFromPayload(payload);
+      };
+
       const onMessage = (event) => {
         const messagePayload = extractPayloadFromMessage(event?.data);
         if (!isThemePayload(messagePayload)) {
@@ -153,6 +188,8 @@
         theme.updateFromPayload(messagePayload);
       };
       window.addEventListener("message", onMessage, { passive: true });
+      pollThemeUpdates();
+      window.setInterval(pollThemeUpdates, INITIAL_PAYLOAD_POLL_MS);
     };
 
     const tryHydrateInitialPayload = () => {
