@@ -102,6 +102,11 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_scales_product_images(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn("transform: scale(1.05)", template_text)
+        self.assertIn("height: 208px", template_text)
+        self.assertIn(
+            "grid-template-rows: 208px 66px 24px 22px 40px 38px",
+            template_text,
+        )
 
     def test_products_template_mobile_toolbar_is_single_row(self) -> None:
         template_text = self._read_products_bundle_text()
