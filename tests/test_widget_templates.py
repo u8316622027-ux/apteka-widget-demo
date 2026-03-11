@@ -94,9 +94,10 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("scroll-snap-type: x mandatory", template_text)
         self.assertIn(':root[data-theme="light"]', template_text)
         self.assertIn(
-            "--shadow-card: 0 12px 28px rgba(21, 41, 86, 0.18)",
+            "--shadow-card: 0 6px 14px rgba(20, 40, 80, 0.12)",
             template_text,
         )
+        self.assertIn("padding-bottom: 12px", template_text)
 
     def test_products_template_mobile_toolbar_is_single_row(self) -> None:
         template_text = self._read_products_bundle_text()
