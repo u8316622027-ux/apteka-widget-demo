@@ -146,11 +146,43 @@
         return;
       }
       const extractThemePayloadFromGlobals = () => {
-        const payload = extractInitialToolPayload();
-        if (!payload || typeof payload !== "object") {
-          return null;
+        const candidates = [
+          window.__APTEKA_WIDGET_PAYLOAD__,
+          window.__MCP_STRUCTURED_CONTENT__,
+          window.__MCP_TOOL_RESULT__,
+          window.__OPENAI_TOOL_RESULT__,
+          window.__INITIAL_TOOL_RESULT__,
+          window.openai?.structuredContent,
+          window.openai?.toolResult?.structuredContent,
+          window.openai?.toolResult,
+          window.openai?.toolOutput?.structuredContent,
+          window.openai?.toolOutput,
+          window.openai?.lastToolResult?.structuredContent,
+          window.openai?.lastToolResult,
+        ];
+        for (const candidate of candidates) {
+          if (!candidate || typeof candidate !== "object") {
+            continue;
+          }
+          const payloads = [
+            candidate,
+            candidate.structuredContent,
+            candidate.result,
+            candidate.result?.structuredContent,
+            candidate.payload,
+            candidate.data,
+          ];
+          for (const payload of payloads) {
+            if (
+              payload &&
+              typeof payload === "object" &&
+              isThemePayload(payload)
+            ) {
+              return payload;
+            }
+          }
         }
-        return isThemePayload(payload) ? payload : null;
+        return null;
       };
 
       const getThemeSignature = (payload) => {

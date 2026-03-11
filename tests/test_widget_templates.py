@@ -84,6 +84,11 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("pollThemeUpdates", template_text)
         self.assertIn("setInterval", template_text)
 
+    def test_products_template_includes_theme_notice(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn('id="theme-notice"', template_text)
+        self.assertIn(".theme-notice", template_text)
+
     def test_products_template_includes_mobile_and_theme_tuning(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn("scroll-snap-type: x mandatory", template_text)

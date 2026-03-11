@@ -5,6 +5,8 @@
     const { root, utils } = ctx;
     const { normalizeText, debugLog } = utils;
     const indicator = document.getElementById("theme-debug-indicator") || null;
+    const notice = document.getElementById("theme-notice") || null;
+    let noticeTimeoutId = 0;
 
     const normalizeTheme = (value) => {
       const normalized = normalizeText(value).toLowerCase();
@@ -72,6 +74,24 @@
       indicator.dataset.themeValue = theme;
     };
 
+    const showNotice = (message) => {
+      if (!(notice instanceof HTMLElement)) {
+        return;
+      }
+      const text = normalizeText(message);
+      if (!text) {
+        return;
+      }
+      notice.textContent = text;
+      notice.classList.add("is-visible");
+      if (noticeTimeoutId) {
+        window.clearTimeout(noticeTimeoutId);
+      }
+      noticeTimeoutId = window.setTimeout(() => {
+        notice.classList.remove("is-visible");
+      }, 6000);
+    };
+
     const applyTheme = (theme) => {
       const normalized = normalizeTheme(theme) || "light";
       root.setAttribute("data-theme", normalized);
@@ -125,6 +145,9 @@
       if (!payload || typeof payload !== "object") {
         return;
       }
+      showNotice(
+        payload.assistant_notice || payload.notice || payload.message || "",
+      );
       const mode = normalizeText(payload.theme_mode || payload.mode);
       const theme = normalizeTheme(payload.theme);
       if (payload.auto_disabled === false) {

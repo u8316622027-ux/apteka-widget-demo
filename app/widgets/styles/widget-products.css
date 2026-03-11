@@ -77,6 +77,31 @@ body {
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
 }
 
+.theme-notice {
+  position: fixed;
+  top: calc(50% + 56px);
+  left: 50%;
+  transform: translate(-50%, -40%);
+  z-index: 2147483647;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(20, 34, 62, 0.92);
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease, transform 200ms ease;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.24);
+}
+
+.theme-notice.is-visible {
+  opacity: 1;
+  transform: translate(-50%, -50%);
+}
+
 .products-loading-overlay {
   position: absolute;
   inset: 0;
