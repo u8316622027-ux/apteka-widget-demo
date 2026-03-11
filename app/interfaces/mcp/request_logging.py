@@ -12,7 +12,7 @@ from urllib.request import urlopen as default_urlopen
 
 from app.core.env import read_env_file_value
 
-ENV_FILE_PATH = Path(__file__).resolve().parents[4] / ".env"
+ENV_FILE_PATH = Path(__file__).resolve().parents[3] / ".env"
 DEFAULT_TABLE_NAME = "mcp_request_logs"
 
 
