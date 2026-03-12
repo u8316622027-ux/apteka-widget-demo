@@ -4,8 +4,15 @@
     const { state, dom, constants, utils, theme } = ctx;
     const { input } = dom;
     const { INITIAL_PAYLOAD_WAIT_MS, INITIAL_PAYLOAD_POLL_MS } = constants;
-    const { normalizeText, extractItems, mapProduct, setLoading, debugLog } =
-      utils;
+    const {
+      normalizeText,
+      normalizeLanguage,
+      getActiveLanguage,
+      extractItems,
+      mapProduct,
+      setLoading,
+      debugLog,
+    } = utils;
 
     const extractToolPage = (payload) => {
       if (!payload || typeof payload !== "object") {
@@ -95,6 +102,10 @@
       }
       if (normalizeText(payload.api_base_url)) {
         state.apiBaseUrl = normalizeText(payload.api_base_url);
+      }
+      const language = normalizeLanguage(payload.language);
+      if (language) {
+        state.language = language;
       }
       const requestedPage = extractToolPage(payload);
       if (requestedPage) {
@@ -288,6 +299,8 @@
         return;
       }
 
+      const language = getActiveLanguage();
+      state.language = language;
       state.isSearching = true;
       state.lastQuery = normalized;
       try {
@@ -303,6 +316,7 @@
         }
         const toolResult = await window.openai.callTool("search_products", {
           query: normalized,
+          language,
         });
         const payload =
           (toolResult &&
@@ -312,6 +326,10 @@
           {};
         if (normalizeText(payload.api_base_url)) {
           state.apiBaseUrl = normalizeText(payload.api_base_url);
+        }
+        const responseLanguage = normalizeLanguage(payload.language);
+        if (responseLanguage) {
+          state.language = responseLanguage;
         }
         theme?.updateFromPayload(payload);
         state.requestedPage = "search";

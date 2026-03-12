@@ -45,6 +45,10 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "properties": {
                     "query": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1},
+                    "language": {
+                        "type": "string",
+                        "description": "User language preference (ru or ro).",
+                    },
                 },
                 "required": ["query"],
             },
@@ -184,7 +188,8 @@ def _build_widget_ui_config() -> dict[str, Any]:
 def _search_products_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     query = str(arguments.get("query", ""))
     limit = int(arguments.get("limit", 10))
-    return search_products(query, limit=limit)
+    language = arguments.get("language")
+    return search_products(query, limit=limit, language=language)
 
 
 def _support_knowledge_search_handler(arguments: dict[str, Any]) -> dict[str, Any]:

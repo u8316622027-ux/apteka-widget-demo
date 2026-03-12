@@ -12,6 +12,7 @@
       lastQuery: "",
       apiBaseUrl: "",
       requestedPage: "search",
+      language: "",
     };
 
     const input = document.getElementById("products-search-input");
@@ -25,6 +26,16 @@
     const supportPopup = document.getElementById("products-support-popup");
 
     const normalizeText = (value) => String(value || "").trim();
+    const normalizeLanguage = (value) => {
+      const normalized = normalizeText(value).toLowerCase();
+      if (normalized.startsWith("ro")) {
+        return "ro";
+      }
+      if (normalized.startsWith("ru")) {
+        return "ru";
+      }
+      return "";
+    };
     const escapeHtml = (value) =>
       String(value || "")
         .replaceAll("&", "&amp;")
@@ -126,22 +137,20 @@
     };
 
     const getPreferredLanguage = () => {
-      const docLang = normalizeText(document.documentElement?.lang);
-      if (docLang.startsWith("ro")) {
-        return "ro";
+      const docLang = normalizeLanguage(document.documentElement?.lang);
+      if (docLang) {
+        return docLang;
       }
-      if (docLang.startsWith("ru")) {
-        return "ru";
-      }
-      const navLang = normalizeText(window.navigator?.language);
-      if (navLang.startsWith("ro")) {
-        return "ro";
-      }
-      if (navLang.startsWith("ru")) {
-        return "ru";
+      const navLang = normalizeLanguage(window.navigator?.language);
+      if (navLang) {
+        return navLang;
       }
       return "ru";
     };
+    const getActiveLanguage = (candidate) =>
+      normalizeLanguage(candidate) ||
+      normalizeLanguage(state.language) ||
+      getPreferredLanguage();
 
     const getSiteBaseUrl = () => "https://www.apteka.md";
 
@@ -241,13 +250,16 @@
         typeof itemTranslations.ru === "object" && itemTranslations.ru
           ? itemTranslations.ru
           : {};
+      const preferredLanguage = getActiveLanguage(item.language);
+      const fallbackLanguage = preferredLanguage === "ru" ? "ro" : "ru";
+      const namePreferred =
+        normalizeText(item[`name_${preferredLanguage}`]) ||
+        normalizeText(preferredLanguage === "ru" ? ru.name : ro.name);
+      const nameFallback =
+        normalizeText(item[`name_${fallbackLanguage}`]) ||
+        normalizeText(fallbackLanguage === "ru" ? ru.name : ro.name);
       const name =
-        normalizeText(item.name_ru) ||
-        normalizeText(item.name_ro) ||
-        normalizeText(ro.name) ||
-        normalizeText(ru.name) ||
-        normalizeText(item.name) ||
-        "Товар";
+        namePreferred || nameFallback || normalizeText(item.name) || "?????";
       const manufacturer =
         normalizeText(item.manufacturer) || "Производитель не указан";
 
@@ -338,7 +350,6 @@
         meta && typeof meta.translations === "object" && meta.translations
           ? meta.translations
           : {};
-      const preferredLanguage = getPreferredLanguage();
       const fallbackLang = preferredLanguage === "ru" ? "ro" : "ru";
       const metaTranslationLang =
         metaTranslations &&
@@ -420,6 +431,7 @@
       },
       utils: {
         normalizeText,
+        normalizeLanguage,
         escapeHtml,
         debugLog,
         toMoney,
@@ -427,6 +439,7 @@
         resolveImageUrl,
         resolveUrl,
         getPreferredLanguage,
+        getActiveLanguage,
         buildProductUrl,
         getFallbackImage,
         setLoading,

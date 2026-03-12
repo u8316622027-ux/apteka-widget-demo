@@ -54,11 +54,13 @@ def search_products(
     query: str,
     *,
     limit: int | None = None,
+    language: str | None = None,
     repository: ProductSearchRepository | None = None,
 ) -> dict[str, Any]:
     """Tool entrypoint for product search."""
 
     effective_repository = repository or AptekaSearchRepository()
+    normalized_language = _normalize_language(language) or "ru"
     service = ProductSearchService(effective_repository)
     try:
         products = service.search_products(query, limit=limit)
@@ -69,6 +71,7 @@ def search_products(
             "count": 0,
             "products": [],
             "api_base_url": get_apteka_base_url(),
+            "language": normalized_language,
             "upstream_error": {
                 "status_code": int(error.code),
                 "retryable": retryable,
@@ -80,6 +83,7 @@ def search_products(
             "count": 0,
             "products": [],
             "api_base_url": get_apteka_base_url(),
+            "language": normalized_language,
             "upstream_error": {
                 "status_code": None,
                 "retryable": True,
@@ -88,8 +92,11 @@ def search_products(
     return {
         "query": query.strip(),
         "count": len(products),
-        "products": [_product_to_dict(product) for product in products],
+        "products": [
+            _product_to_dict(product, language=normalized_language) for product in products
+        ],
         "api_base_url": get_apteka_base_url(),
+        "language": normalized_language,
     }
 
 
@@ -192,10 +199,25 @@ def _map_product(item: dict[str, Any]) -> ProductSummary:
     )
 
 
-def _product_to_dict(product: ProductSummary) -> dict[str, Any]:
+def _product_to_dict(product: ProductSummary, *, language: str = "ru") -> dict[str, Any]:
     payload = asdict(product)
+    normalized_language = _normalize_language(language) or "ru"
+    if normalized_language == "ro":
+        preferred_name = product.name_ro or product.name_ru
+    else:
+        preferred_name = product.name_ru or product.name_ro
+    payload["name"] = preferred_name
     payload["internationalName"] = payload.pop("international_name")
     return payload
+
+
+def _normalize_language(language: str | None) -> str:
+    normalized = str(language or "").strip().lower()
+    if normalized.startswith("ro"):
+        return "ro"
+    if normalized.startswith("ru"):
+        return "ru"
+    return ""
 
 
 def _extract_image_url(item: dict[str, Any]) -> str | None:
