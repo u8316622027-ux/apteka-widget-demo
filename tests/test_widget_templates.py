@@ -93,6 +93,12 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("pollThemeUpdates", template_text)
         self.assertIn("setInterval", template_text)
 
+    def test_products_template_limits_theme_polling(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("themeIntervalId", template_text)
+        self.assertIn("stableTicks", template_text)
+        self.assertIn("clearInterval", template_text)
+
     def test_products_template_includes_theme_notice(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn('id="theme-notice"', template_text)

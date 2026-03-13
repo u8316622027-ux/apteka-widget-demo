@@ -209,18 +209,20 @@
         return [themeValue, modeValue, autoValue].join("|");
       };
 
+      const MAX_STABLE_THEME_TICKS = 50;
       let lastThemeSignature = "";
       const pollThemeUpdates = () => {
         const payload = extractThemePayloadFromGlobals();
         if (!payload) {
-          return;
+          return false;
         }
         const signature = getThemeSignature(payload);
         if (!signature || signature === lastThemeSignature) {
-          return;
+          return false;
         }
         lastThemeSignature = signature;
         theme.updateFromPayload(payload);
+        return true;
       };
 
       const onMessage = (event) => {
@@ -231,8 +233,19 @@
         theme.updateFromPayload(messagePayload);
       };
       window.addEventListener("message", onMessage, { passive: true });
+      let stableTicks = 0;
+      const themeIntervalId = window.setInterval(() => {
+        const changed = pollThemeUpdates();
+        if (changed) {
+          stableTicks = 0;
+          return;
+        }
+        stableTicks += 1;
+        if (stableTicks >= MAX_STABLE_THEME_TICKS) {
+          window.clearInterval(themeIntervalId);
+        }
+      }, INITIAL_PAYLOAD_POLL_MS);
       pollThemeUpdates();
-      window.setInterval(pollThemeUpdates, INITIAL_PAYLOAD_POLL_MS);
     };
 
     const tryHydrateInitialPayload = () => {
