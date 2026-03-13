@@ -12,6 +12,11 @@
   --border-soft: #dbe6ff;
   --border-strong: #2b4e89;
   --shadow-card: 0 16px 36px rgba(6, 15, 36, 0.34);
+  --empty-card-bg: #101a2f;
+  --empty-card-border: #22355c;
+  --empty-icon-bg: #141f38;
+  --empty-icon-stroke: #6f8fcb;
+  --empty-title: #cfe0ff;
 }
 
 :root[data-theme="light"] {
@@ -28,6 +33,11 @@
   --border-soft: #dbe6ff;
   --border-strong: #c8d6f2;
   --shadow-card: 0 6px 14px rgba(20, 40, 80, 0.12);
+  --empty-card-bg: #f7f9fd;
+  --empty-card-border: #dce5f8;
+  --empty-icon-bg: #eef3ff;
+  --empty-icon-stroke: #8aa3d4;
+  --empty-title: #1c3060;
 }
 
 html,
@@ -215,6 +225,14 @@ body {
   display: none;
 }
 
+.product-track--empty {
+  justify-content: center;
+}
+
+.product-track--empty .product-card--empty {
+  margin-inline: auto;
+}
+
 .product-card,
 .skeleton-card {
   flex: 0 0 240px;
@@ -232,6 +250,54 @@ body {
   gap: 8px;
   align-content: start;
   box-shadow: var(--shadow-card);
+}
+
+.product-card--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26px 18px;
+  text-align: center;
+  background: var(--empty-card-bg);
+  border: 1px solid var(--empty-card-border);
+  box-shadow: var(--shadow-card);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.empty-state-icon {
+  width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  background: var(--empty-icon-bg);
+  color: var(--empty-icon-stroke);
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(144, 166, 214, 0.25);
+}
+
+.empty-state-icon svg {
+  width: 56px;
+  height: 56px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--empty-title);
+  font-weight: 600;
+  max-width: 200px;
 }
 
 .product-image {
@@ -628,6 +694,10 @@ body {
   .carousel-arrow-wrap {
     display: none;
   }
+
+  .product-track--empty {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 420px) {
@@ -663,5 +733,20 @@ body {
 
   .new-price {
     font-size: 24px;
+  }
+
+  .empty-state-icon {
+    width: 96px;
+    height: 96px;
+  }
+
+  .empty-state-icon svg {
+    width: 48px;
+    height: 48px;
+  }
+
+  .empty-state-title {
+    font-size: 14px;
+    max-width: 180px;
   }
 }

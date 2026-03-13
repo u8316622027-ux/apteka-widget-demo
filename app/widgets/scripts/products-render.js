@@ -8,6 +8,7 @@
       toMoney,
       computeDiscount,
       getFallbackImage,
+      getActiveLanguage,
       debugLog,
     } = utils;
 
@@ -58,12 +59,38 @@
       }
 
       if (!state.products.length) {
-        track.innerHTML =
-          '<article class="product-card"><h3 class="product-title">Ничего не найдено</h3><p class="manufacturer">Попробуйте другой запрос</p></article>';
+        const language = getActiveLanguage();
+        const emptyCopy =
+          language === "ro"
+            ? {
+                title: "Produsul nu a fost găsit",
+              }
+            : {
+                title: "Товар не найден",
+              };
+        track.innerHTML = `
+          <article class="product-card product-card--empty" role="status" aria-live="polite">
+            <div class="empty-state">
+              <div class="empty-state-icon" aria-hidden="true">
+                <svg viewBox="0 0 64 64" aria-hidden="true">
+                  <path d="M20 16h18l10 10v22a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4z"></path>
+                  <path d="M38 16v10h10"></path>
+                  <circle cx="28" cy="42" r="6.5"></circle>
+                  <path d="M33 46l6 6"></path>
+                  <path d="M24 28h12"></path>
+                  <path d="M24 32h16"></path>
+                </svg>
+              </div>
+              <h3 class="empty-state-title">${escapeHtml(emptyCopy.title)}</h3>
+            </div>
+          </article>
+        `;
+        track.classList.add("product-track--empty");
         updateCarouselControls();
         return;
       }
 
+      track.classList.remove("product-track--empty");
       track.innerHTML = state.products
         .map((product) => {
           const hasBasePrice =

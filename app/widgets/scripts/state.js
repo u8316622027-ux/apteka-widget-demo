@@ -1,6 +1,6 @@
 (() => {
   const createContext = (root) => {
-    const INITIAL_PAYLOAD_WAIT_MS = 5000;
+    const INITIAL_PAYLOAD_WAIT_MS = 10000;
     const INITIAL_PAYLOAD_POLL_MS = 140;
     const FALLBACK_IMAGE_PATH = "/assets/images/placeholder-600x600.png";
 

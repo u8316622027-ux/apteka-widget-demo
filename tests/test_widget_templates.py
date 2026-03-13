@@ -62,6 +62,15 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn('target="_blank"', template_text)
         self.assertIn('rel="noopener noreferrer"', template_text)
 
+    def test_products_template_includes_empty_state_copy(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("product-card--empty", template_text)
+        self.assertIn("empty-state-icon", template_text)
+        self.assertIn("Товар не найден", template_text)
+        self.assertIn("Produsul nu a fost găsit", template_text)
+        self.assertIn("--empty-card-bg", template_text)
+        self.assertIn("--empty-icon-bg", template_text)
+
     def test_products_template_removes_cart_and_checkout_ui(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertNotIn("products-cart-modal", template_text)
@@ -98,6 +107,10 @@ class WidgetTemplateTests(unittest.TestCase):
             template_text,
         )
         self.assertIn("padding-bottom: 12px", template_text)
+
+    def test_products_template_sets_initial_payload_timeout(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertIn("INITIAL_PAYLOAD_WAIT_MS = 10000", template_text)
 
     def test_products_template_scales_product_images(self) -> None:
         template_text = self._read_products_bundle_text()
