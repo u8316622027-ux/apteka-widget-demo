@@ -758,6 +758,30 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
                 request_id=request_id, status_code=HTTPStatus.OK, started_at=started_at
             )
             return
+        if self.path == "/mcp":
+            self._send_method_not_allowed(request_id=request_id, allow="POST")
+            self._log_access(
+                request_id=request_id,
+                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
+                started_at=started_at,
+            )
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+        self._log_access(
+            request_id=request_id, status_code=HTTPStatus.NOT_FOUND, started_at=started_at
+        )
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        started_at = _perf_counter()
+        request_id = _resolve_http_request_id(self.headers.get("X-Request-Id"))
+        if self.path == "/mcp":
+            self._send_method_not_allowed(request_id=request_id, allow="POST")
+            self._log_access(
+                request_id=request_id,
+                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
+                started_at=started_at,
+            )
+            return
         self.send_error(HTTPStatus.NOT_FOUND)
         self._log_access(
             request_id=request_id, status_code=HTTPStatus.NOT_FOUND, started_at=started_at
@@ -860,6 +884,17 @@ class MCPHttpHandler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Accept-Encoding")
         if request_id:
             self.send_header("X-Request-Id", request_id)
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _send_method_not_allowed(self, *, request_id: str, allow: str) -> None:
+        payload = _rpc_error(None, -32600, "Method not allowed: server operates in stateless mode")
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self.send_response(HTTPStatus.METHOD_NOT_ALLOWED)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Allow", allow)
+        self.send_header("X-Request-Id", request_id)
         self.end_headers()
         self.wfile.write(encoded)
 

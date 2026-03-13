@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import http.client
 import json
+import threading
+from http import HTTPStatus
 from pathlib import Path
 from uuid import uuid4
 
@@ -132,6 +135,34 @@ def test_parse_content_length_rejects_missing() -> None:
         mcp_server._parse_content_length(headers)
 
 
+def _start_mcp_server() -> tuple[mcp_server.ThreadingHTTPServer, threading.Thread, str, int]:
+    server = mcp_server.ThreadingHTTPServer(("127.0.0.1", 0), mcp_server.MCPHttpHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    return server, thread, str(host), int(port)
+
+
+def _stop_mcp_server(server: mcp_server.ThreadingHTTPServer, thread: threading.Thread) -> None:
+    server.shutdown()
+    thread.join(timeout=1.0)
+    server.server_close()
+
+
+def _http_request(
+    *, host: str, port: int, method: str, path: str
+) -> tuple[int, dict[str, str], bytes]:
+    connection = http.client.HTTPConnection(host, port, timeout=2.0)
+    try:
+        connection.request(method, path)
+        response = connection.getresponse()
+        body = response.read()
+        headers = dict(response.getheaders())
+        return response.status, headers, body
+    finally:
+        connection.close()
+
+
 def test_handle_jsonrpc_payload_logs_request_and_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -161,6 +192,45 @@ def test_handle_jsonrpc_payload_logs_request_and_response(
     response = mcp_server.handle_jsonrpc_payload(request_payload, registry=registry)
 
     assert captured == [(request_payload, response)]
+
+
+def test_get_mcp_returns_method_not_allowed() -> None:
+    server, thread, host, port = _start_mcp_server()
+    try:
+        status, headers, body = _http_request(host=host, port=port, method="GET", path="/mcp")
+    finally:
+        _stop_mcp_server(server, thread)
+
+    assert status == HTTPStatus.METHOD_NOT_ALLOWED
+    assert headers.get("Allow") == "POST"
+    payload = json.loads(body.decode("utf-8"))
+    assert payload["error"]["code"] == -32600
+    assert "stateless" in payload["error"]["message"].lower()
+
+
+def test_delete_mcp_returns_method_not_allowed() -> None:
+    server, thread, host, port = _start_mcp_server()
+    try:
+        status, headers, body = _http_request(host=host, port=port, method="DELETE", path="/mcp")
+    finally:
+        _stop_mcp_server(server, thread)
+
+    assert status == HTTPStatus.METHOD_NOT_ALLOWED
+    assert headers.get("Allow") == "POST"
+    payload = json.loads(body.decode("utf-8"))
+    assert payload["error"]["code"] == -32600
+
+
+def test_get_health_still_returns_ok() -> None:
+    server, thread, host, port = _start_mcp_server()
+    try:
+        status, _headers, body = _http_request(host=host, port=port, method="GET", path="/health")
+    finally:
+        _stop_mcp_server(server, thread)
+
+    assert status == HTTPStatus.OK
+    payload = json.loads(body.decode("utf-8"))
+    assert payload == {"status": "ok"}
 
 
 def test_log_mcp_request_safe_includes_error_message(
