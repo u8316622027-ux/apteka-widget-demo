@@ -32,8 +32,16 @@ def test_tool_descriptor_readonly_annotations() -> None:
     search_payload = tool_registry.serialize_tool_definition(registry["search_products"])
     support_payload = tool_registry.serialize_tool_definition(registry["support_knowledge_search"])
 
-    assert search_payload["annotations"]["readOnlyHint"] is True
-    assert support_payload["annotations"]["readOnlyHint"] is True
+    assert search_payload["annotations"] == {
+        "readOnlyHint": True,
+        "openWorldHint": True,
+        "destructiveHint": False,
+    }
+    assert support_payload["annotations"] == {
+        "readOnlyHint": True,
+        "openWorldHint": False,
+        "destructiveHint": False,
+    }
 
 
 def test_theme_tool_is_removed() -> None:

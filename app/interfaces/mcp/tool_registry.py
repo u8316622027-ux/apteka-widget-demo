@@ -55,7 +55,11 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             handler=_search_products_handler,
             output_template="ui://widget/products.html",
             ui=widget_ui_config,
-            annotations={"readOnlyHint": True},
+            annotations={
+                "readOnlyHint": True,
+                "openWorldHint": True,
+                "destructiveHint": False,
+            },
             tool_invocation={
                 "invoking": "Searching products…",
                 "invoked": "Products found.",
@@ -79,7 +83,11 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             handler=_support_knowledge_search_handler,
             output_template="",
             ui=widget_ui_config,
-            annotations={"readOnlyHint": True},
+            annotations={
+                "readOnlyHint": True,
+                "openWorldHint": False,
+                "destructiveHint": False,
+            },
             tool_invocation={
                 "invoking": "Searching support knowledge…",
                 "invoked": "Support knowledge found.",
