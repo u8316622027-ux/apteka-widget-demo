@@ -77,6 +77,7 @@ class AptekaCheckoutClient:
                     "city_id": city_id,
                     "name": title(item),
                     "address": title(item, "address"),
+                    "schedule": item.get("schedule") or {},
                 }
             )
         return {
@@ -99,7 +100,14 @@ class AptekaCheckoutClient:
         groups = payload.get("availableWindows") or {}
         windows = [window for group in groups.values() for window in group] if groups else [payload]
         return [
-            {key: str(window[key]) for key in ("deliveryDate", "from", "to")}
+            {
+                **{key: str(window[key]) for key in ("deliveryDate", "from", "to")},
+                **{
+                    key: str(payload[key])
+                    for key in ("orderEnd", "pharmacyClose")
+                    if payload.get(key)
+                },
+            }
             for window in windows
             if all(window.get(k) for k in ("deliveryDate", "from", "to"))
         ]

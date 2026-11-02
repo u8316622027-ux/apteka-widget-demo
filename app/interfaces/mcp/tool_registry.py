@@ -155,7 +155,7 @@ def _commerce_tools(ui):
             {
                 "cart_session_id": session,
                 "language": language,
-                "action": {"type": "string", "enum": ["options", "review", "submit"]},
+                "action": {"type": "string", "enum": ["options", "delivery", "review", "submit"]},
                 "delivery_method": {"type": "string", "enum": ["pickup", "courier"]},
                 "pharmacy_id": {"type": "integer", "minimum": 1},
                 "region_id": {"type": "integer", "minimum": 1},

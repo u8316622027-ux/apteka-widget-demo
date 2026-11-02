@@ -3,12 +3,37 @@
     const INITIAL_PAYLOAD_WAIT_MS = 10000;
     const INITIAL_PAYLOAD_POLL_MS = 140;
     const FALLBACK_IMAGE_PATH = "/assets/images/placeholder-600x600.png";
+    const CART_STORAGE_KEY = "apteka_widget_cart";
+    const CART_TOKEN_STORAGE_KEY = "apteka_widget_cart_token";
+    const LANGUAGE_STORAGE_KEY = "apteka_widget_language";
 
     const state = {
       loadedOnce: false,
       isSearching: false,
       isLoading: true,
       products: [],
+      cartItems: [],
+      cartToasts: [],
+      cartToastSerial: 0,
+      cartMutationSerial: 0,
+      cartOpen: false,
+      checkoutOpen: false,
+      checkoutStep: "delivery",
+      checkoutOpenSelectId: "",
+      cartToken: "",
+      checkoutLookupsLoaded: false,
+      checkoutLookupsLoading: false,
+      checkoutRegions: [],
+      checkoutPharmacies: [],
+      checkoutSectorCache: {},
+      checkoutTargetCache: {},
+      checkoutPickupCache: {},
+      checkoutDeliveryWindows: [],
+      checkoutDeliveryWindowIndex: 0,
+      isSubmittingOrder: false,
+      isReconcilingCart: false,
+      orderSubmitted: false,
+      lastOrderId: "",
       lastQuery: "",
       apiBaseUrl: "",
       requestedPage: "search",
@@ -24,6 +49,82 @@
     const supportButton = document.getElementById("products-support-button");
     const supportLayer = document.getElementById("products-support-layer");
     const supportPopup = document.getElementById("products-support-popup");
+    const languageButton = document.getElementById("products-language-toggle");
+    const themeButton = document.getElementById("products-theme-toggle");
+    const cartButton = document.getElementById("products-cart-button");
+    const cartCount = document.getElementById("products-cart-count");
+    const cartLayer = document.getElementById("products-cart-layer");
+    const cartPanel = document.getElementById("products-cart-panel");
+    const cartItems = document.getElementById("products-cart-items");
+    const cartTotal = document.getElementById("products-cart-total");
+    const cartCheckout = document.getElementById("products-cart-checkout");
+    const cartToastRegion = document.getElementById(
+      "products-cart-toast-region",
+    );
+    const checkoutForm = document.getElementById("products-checkout-flow");
+    const checkoutName = document.getElementById("products-checkout-flow-name");
+    const checkoutCountry = document.getElementById(
+      "products-checkout-flow-country",
+    );
+    const checkoutPhone = document.getElementById(
+      "products-checkout-flow-phone",
+    );
+    const checkoutCity = document.getElementById("products-checkout-flow-city");
+    const checkoutAddress = document.getElementById(
+      "products-checkout-flow-address",
+    );
+    const checkoutComment = document.getElementById(
+      "products-checkout-flow-comment",
+    );
+    const checkoutStreet = document.getElementById(
+      "products-checkout-flow-street",
+    );
+    const checkoutBuilding = document.getElementById(
+      "products-checkout-flow-building",
+    );
+    const checkoutApartment = document.getElementById(
+      "products-checkout-flow-apartment",
+    );
+    const checkoutEntrance = document.getElementById(
+      "products-checkout-flow-entrance",
+    );
+    const checkoutFloor = document.getElementById(
+      "products-checkout-flow-floor",
+    );
+    const checkoutIntercom = document.getElementById(
+      "products-checkout-flow-intercom",
+    );
+    const checkoutEmail = document.getElementById(
+      "products-checkout-flow-email",
+    );
+    const checkoutRegion = document.getElementById(
+      "products-checkout-flow-region",
+    );
+    const checkoutSector = document.getElementById(
+      "products-checkout-flow-sector",
+    );
+    const checkoutPharmacy = document.getElementById(
+      "products-checkout-flow-pharmacy",
+    );
+    const checkoutPharmacyOptions = document.getElementById(
+      "products-checkout-flow-pharmacy-options",
+    );
+    const checkoutDeliveryWindows = document.getElementById(
+      "products-checkout-flow-delivery-windows",
+    );
+    const checkoutReview = document.getElementById(
+      "products-checkout-flow-review",
+    );
+    const checkoutConsent = document.getElementById(
+      "products-checkout-flow-consent",
+    );
+    const checkoutStatus = document.getElementById(
+      "products-checkout-flow-status",
+    );
+    const orderSubmit = document.getElementById(
+      "products-checkout-flow-submit",
+    );
+    const checkoutBack = document.getElementById("products-checkout-flow-back");
 
     const normalizeText = (value) => String(value || "").trim();
     const normalizeLanguage = (value) => {
@@ -36,6 +137,32 @@
       }
       return "";
     };
+    const readStorageValue = (key) => {
+      try {
+        return window.localStorage.getItem(key);
+      } catch (_error) {
+        return null;
+      }
+    };
+    const writeStorageValue = (key, value) => {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch (_error) {
+        // ignore storage errors
+      }
+    };
+    const setActiveLanguage = (language, options = {}) => {
+      const normalized = normalizeLanguage(language);
+      if (!normalized) {
+        return "";
+      }
+      state.language = normalized;
+      if (options.persist) {
+        writeStorageValue(LANGUAGE_STORAGE_KEY, normalized);
+      }
+      return normalized;
+    };
+    setActiveLanguage(readStorageValue(LANGUAGE_STORAGE_KEY));
     const escapeHtml = (value) =>
       String(value || "")
         .replaceAll("&", "&amp;")
@@ -99,6 +226,28 @@
       return Math.max(1, Math.round(((price - discountPrice) / price) * 100));
     };
 
+    const getProductPrice = (product) => {
+      if (!product || typeof product !== "object") {
+        return null;
+      }
+      const basePrice =
+        typeof product.price === "number" && product.price > 0
+          ? product.price
+          : null;
+      const discountPrice =
+        typeof product.discountPrice === "number" && product.discountPrice > 0
+          ? product.discountPrice
+          : null;
+      if (
+        basePrice !== null &&
+        discountPrice !== null &&
+        discountPrice < basePrice
+      ) {
+        return discountPrice;
+      }
+      return basePrice;
+    };
+
     const resolveImageUrl = (rawUrl) => {
       const imageUrl = normalizeText(rawUrl);
       if (!imageUrl) {
@@ -136,17 +285,24 @@
       }
     };
 
-    const getPreferredLanguage = () => {
-      const docLang = normalizeLanguage(document.documentElement?.lang);
-      if (docLang) {
-        return docLang;
-      }
-      const navLang = normalizeLanguage(window.navigator?.language);
-      if (navLang) {
-        return navLang;
+    const resolveHostLocale = () => {
+      const candidates = [
+        window.openai?.locale,
+        window.openai?.user?.locale,
+        window.openai?.preferences?.locale,
+        window.__OPENAI_LOCALE__,
+        document.documentElement?.lang,
+        window.navigator?.language,
+      ];
+      for (const candidate of candidates) {
+        const normalized = normalizeText(candidate).toLowerCase();
+        if (normalized) {
+          return normalized.startsWith("ru") ? "ru" : "ro";
+        }
       }
       return "ru";
     };
+    const getPreferredLanguage = () => resolveHostLocale();
     const getActiveLanguage = (candidate) =>
       normalizeLanguage(candidate) ||
       normalizeLanguage(state.language) ||
@@ -161,7 +317,9 @@
       }
       return normalized
         .replace("https://api.apteka.md", "https://www.apteka.md")
-        .replace("http://api.apteka.md", "https://www.apteka.md");
+        .replace("http://api.apteka.md", "https://www.apteka.md")
+        .replace("https://www.apteka.md", "https://www.apteka.md")
+        .replace("http://www.apteka.md", "https://www.apteka.md");
     };
 
     const buildProductUrl = (rawUrl, slug, language) => {
@@ -252,12 +410,12 @@
           : {};
       const preferredLanguage = getActiveLanguage(item.language);
       const fallbackLanguage = preferredLanguage === "ru" ? "ro" : "ru";
+      const nameRu = normalizeText(item.name_ru) || normalizeText(ru.name);
+      const nameRo = normalizeText(item.name_ro) || normalizeText(ro.name);
       const namePreferred =
-        normalizeText(item[`name_${preferredLanguage}`]) ||
-        normalizeText(preferredLanguage === "ru" ? ru.name : ro.name);
+        preferredLanguage === "ru" ? nameRu || nameRo : nameRo || nameRu;
       const nameFallback =
-        normalizeText(item[`name_${fallbackLanguage}`]) ||
-        normalizeText(fallbackLanguage === "ru" ? ru.name : ro.name);
+        fallbackLanguage === "ru" ? nameRu || nameRo : nameRo || nameRu;
       const name =
         namePreferred || nameFallback || normalizeText(item.name) || "?????";
       const manufacturer =
@@ -370,9 +528,16 @@
         itemTranslations[fallbackLang]
           ? itemTranslations[fallbackLang]
           : {};
-      const slug =
+      const slugRu =
         normalizeText(item.slug_ru) ||
+        normalizeText(metaTranslations.ru?.slug) ||
+        normalizeText(itemTranslations.ru?.slug);
+      const slugRo =
         normalizeText(item.slug_ro) ||
+        normalizeText(metaTranslations.ro?.slug) ||
+        normalizeText(itemTranslations.ro?.slug);
+      const slug =
+        (preferredLanguage === "ru" ? slugRu || slugRo : slugRo || slugRu) ||
         normalizeText(metaTranslationLang.slug) ||
         normalizeText(metaTranslationFallback.slug) ||
         normalizeText(translationLang.slug) ||
@@ -390,14 +555,114 @@
       return {
         id: productId,
         name,
+        nameRu,
+        nameRo,
         manufacturer,
         price: Number.isNaN(price) ? null : price,
         discountPrice: Number.isNaN(discountPrice) ? null : discountPrice,
         imageUrl,
         productSlug: slug,
+        productSlugRu: slugRu,
+        productSlugRo: slugRo,
+        rawUrl,
         productUrl: buildProductUrl(rawUrl, slug, preferredLanguage),
       };
     };
+
+    const normalizeCartQuantity = (value) => {
+      const quantity = Number(value);
+      if (!Number.isFinite(quantity)) {
+        return 1;
+      }
+      return Math.min(99, Math.max(1, Math.floor(quantity)));
+    };
+
+    const sanitizeCartItem = (item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const id = normalizeText(item.id);
+      const name = normalizeText(item.name);
+      const price = Number(item.price);
+      if (!id || !name || !Number.isFinite(price) || price <= 0) {
+        return null;
+      }
+      return {
+        id,
+        name,
+        nameRu: normalizeText(item.nameRu || item.name_ru),
+        nameRo: normalizeText(item.nameRo || item.name_ro),
+        manufacturer: normalizeText(item.manufacturer),
+        price,
+        imageUrl: normalizeText(item.imageUrl) || getFallbackImage(),
+        productUrl: normalizeText(item.productUrl) || getSiteBaseUrl(),
+        rawUrl: normalizeText(item.rawUrl || item.raw_url),
+        productSlug: normalizeText(item.productSlug || item.slug),
+        productSlugRu: normalizeText(item.productSlugRu || item.slug_ru),
+        productSlugRo: normalizeText(item.productSlugRo || item.slug_ro),
+        quantity: normalizeCartQuantity(item.quantity),
+      };
+    };
+
+    const readStoredCart = () => {
+      try {
+        const rawCart = window.localStorage.getItem(CART_STORAGE_KEY);
+        const parsed = rawCart ? JSON.parse(rawCart) : [];
+        if (!Array.isArray(parsed)) {
+          return [];
+        }
+        return parsed.map(sanitizeCartItem).filter(Boolean);
+      } catch (_error) {
+        return [];
+      }
+    };
+
+    const writeStoredCart = () => {
+      try {
+        window.localStorage.setItem(
+          CART_STORAGE_KEY,
+          JSON.stringify(state.cartItems),
+        );
+      } catch (_error) {
+        // ignore storage write errors
+      }
+    };
+
+    const readStoredCartToken = () => {
+      try {
+        return normalizeText(
+          window.localStorage.getItem(CART_TOKEN_STORAGE_KEY),
+        );
+      } catch (_error) {
+        return "";
+      }
+    };
+
+    const writeStoredCartToken = (token) => {
+      try {
+        const normalized = normalizeText(token);
+        if (normalized) {
+          window.localStorage.setItem(CART_TOKEN_STORAGE_KEY, normalized);
+        } else {
+          window.localStorage.removeItem(CART_TOKEN_STORAGE_KEY);
+        }
+      } catch (_error) {
+        // ignore storage write errors
+      }
+    };
+
+    const getCartCount = () =>
+      state.cartItems.reduce((total, item) => total + item.quantity, 0);
+
+    const getCartTotal = () =>
+      state.cartItems.reduce(
+        (total, item) => total + item.price * item.quantity,
+        0,
+      );
+
+    state.cartItems = readStoredCart();
+    state.cartToken = "";
+    writeStoredCartToken("");
 
     return {
       root,
@@ -405,6 +670,9 @@
       constants: {
         INITIAL_PAYLOAD_WAIT_MS,
         INITIAL_PAYLOAD_POLL_MS,
+        CART_STORAGE_KEY,
+        CART_TOKEN_STORAGE_KEY,
+        LANGUAGE_STORAGE_KEY,
       },
       dom: {
         input,
@@ -416,26 +684,88 @@
         supportButton,
         supportLayer,
         supportPopup,
+        languageButton,
+        themeButton,
+        cartButton,
+        cartCount,
+        cartLayer,
+        cartPanel,
+        cartItems,
+        cartTotal,
+        cartCheckout,
+        cartToastRegion,
+        checkoutForm,
+        checkoutName,
+        checkoutCountry,
+        checkoutPhone,
+        checkoutCity,
+        checkoutAddress,
+        checkoutComment,
+        checkoutStreet,
+        checkoutBuilding,
+        checkoutApartment,
+        checkoutEntrance,
+        checkoutFloor,
+        checkoutIntercom,
+        checkoutEmail,
+        checkoutRegion,
+        checkoutSector,
+        checkoutPharmacy,
+        checkoutPharmacyOptions,
+        checkoutDeliveryWindows,
+        checkoutReview,
+        checkoutConsent,
+        checkoutStatus,
+        orderSubmit,
+        checkoutBack,
       },
       ui: {
         renderProducts: () => {},
+        renderCart: () => {},
+        renderCheckout: () => {},
+        renderCheckoutPhoneMask: () => {},
         updateCarouselControls: () => {},
+        toggleCart: (_nextState) => {},
+        toggleCheckout: (_nextState) => {},
         toggleSupportPopup: (_nextState) => {},
       },
       actions: {
         searchProducts: (_query) => Promise.resolve(),
+        setLanguage: (_language) => {},
+        toggleLanguage: () => {},
+        setTheme: (_theme) => {},
+        toggleTheme: () => {},
         openSupportPopup: () => {},
+        addToCart: (_productId) => {},
+        formatCheckoutPhone: () => {},
+        changeCartQuantity: (_productId, _delta) => {},
+        removeFromCart: (_productId) => {},
+        toggleCheckoutSelect: (_selectId) => {},
+        chooseCheckoutSelect: (_selectId, _value) => {},
+        closeCheckoutSelect: () => {},
+        openCart: () => {},
+        closeCart: () => {},
+        openCheckout: () => {},
+        closeCheckout: () => {},
+        nextCheckoutStep: () => {},
+        previousCheckoutStep: () => {},
+        setCheckoutStep: (_step) => {},
+        refreshCheckoutDeliveryData: () => Promise.resolve(),
+        submitOrder: () => Promise.resolve(),
       },
       tools: {
         waitForInitialPayload: () => Promise.resolve(false),
+        ensureCartSession: () => Promise.resolve(),
       },
       utils: {
         normalizeText,
         normalizeLanguage,
+        setActiveLanguage,
         escapeHtml,
         debugLog,
         toMoney,
         computeDiscount,
+        getProductPrice,
         resolveImageUrl,
         resolveUrl,
         getPreferredLanguage,
@@ -445,6 +775,12 @@
         setLoading,
         extractItems,
         mapProduct,
+        normalizeCartQuantity,
+        writeStoredCart,
+        readStoredCartToken,
+        writeStoredCartToken,
+        getCartCount,
+        getCartTotal,
       },
     };
   };

@@ -67,6 +67,23 @@ def checkout_order(arguments, *, repository=None, token_store=None, client=None)
     if not cart["items"]:
         return {"status": "cart_empty", "cart_session_id": session_id, "cart": cart}
     references = api.reference_data(language)
+    if action == "delivery":
+        method = arguments.get("delivery_method")
+        if method == "pickup":
+            destination = _required_option(
+                references["pharmacies"], arguments.get("pharmacy_id"), "pharmacy"
+            )
+        elif method == "courier":
+            destination = _required_option(
+                references["regions"], arguments.get("region_id"), "region"
+            )
+        else:
+            raise ValueError("Choose pickup or courier delivery")
+        return {
+            "status": "delivery_windows",
+            "cart_session_id": session_id,
+            "windows": api.delivery_windows(method, destination["id"], language),
+        }
     if action == "options":
         return {
             "status": "delivery_method_selection",
@@ -137,7 +154,7 @@ def _build_review(args, cart, references, api, language):
         errors = validator.validate_courier_address(address)
         if errors:
             raise ValueError("; ".join(error["message"] for error in errors))
-        destination_id = city["id"]
+        destination_id = region["id"]
         delivery.update(
             type="target",
             address_id=None,
@@ -164,9 +181,23 @@ def _build_review(args, cart, references, api, language):
     if not windows:
         raise ValueError("No delivery window available; choose another destination")
     requested_window = args.get("delivery_window") or windows[0]
-    if requested_window not in windows:
+    selected_window = next(
+        (
+            window
+            for window in windows
+            if all(
+                window.get(key) == requested_window.get(key)
+                for key in ("deliveryDate", "from", "to")
+            )
+        ),
+        None,
+    )
+    if selected_window is None:
         raise ValueError("Delivery window is no longer available; review the order again")
-    delivery["deliveryWindow"] = requested_window
+    requested_window = selected_window
+    delivery["deliveryWindow"] = {
+        key: requested_window[key] for key in ("deliveryDate", "from", "to")
+    }
     if cart["total"] is None:
         raise ValueError("Cart total is unavailable; refresh the cart")
     order = {
@@ -188,6 +219,16 @@ def _build_review(args, cart, references, api, language):
         "available_windows": windows,
         "payment_method": payment,
         "comment": order["note"],
+        "checkout_input": {
+            "delivery_method": method,
+            "region_id": pharmacy["region_id"] if method == "pickup" else region["id"],
+            "city_id": pharmacy["city_id"] if method == "pickup" else city["id"],
+            "pharmacy_id": pharmacy["id"] if method == "pickup" else None,
+            "contact": asdict(contact),
+            "address": asdict(address) if method == "courier" else {},
+            "payment_method": payment,
+            "comment": order["note"],
+        },
     }
     return order, preview
 

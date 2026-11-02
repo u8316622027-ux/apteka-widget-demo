@@ -83,11 +83,41 @@ def test_options_do_not_submit_and_hide_private_token(checkout):
     assert client.orders == []
 
 
+def test_delivery_step_returns_windows_without_requiring_contact(checkout):
+    call, _, client = checkout
+    result = call(action="delivery", delivery_method="pickup", pharmacy_id=1)
+    assert result["status"] == "delivery_windows"
+    assert result["windows"][0]["deliveryDate"] == "03.11.2026"
+    assert not client.orders
+
+
+def test_courier_calculates_delivery_for_selected_region(checkout):
+    call, _, client = checkout
+    destinations = []
+    original = client.delivery_windows
+
+    def windows(method, destination_id, language):
+        destinations.append(destination_id)
+        return original(method, destination_id, language)
+
+    client.delivery_windows = windows
+    call(
+        **review_arguments(
+            delivery_method="courier",
+            region_id=2,
+            city_id=24,
+            address={"street": "Dacia", "house_number": "10"},
+        )
+    )
+    assert destinations == [2]
+
+
 def test_pickup_review_submit_uses_same_cart_and_is_idempotent(checkout):
     call, _, client = checkout
     review = call(**review_arguments())
     assert review["status"] == "review"
     assert review["review"]["total"] == 80
+    assert review["review"]["checkout_input"]["pharmacy_id"] == 1
     assert not client.orders
     arguments = dict(
         action="submit", confirmation_id=review["confirmation_id"], terms_accepted=True

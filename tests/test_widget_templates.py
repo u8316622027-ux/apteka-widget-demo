@@ -73,8 +73,12 @@ class WidgetTemplateTests(unittest.TestCase):
 
     def test_products_template_includes_cart_and_checkout_ui(self) -> None:
         template_text = self._read_products_bundle_text()
-        self.assertIn("products-page-checkout", template_text)
-        self.assertIn("products-page-my-cart", template_text)
+        self.assertIn('id="products-cart-panel"', template_text)
+        self.assertIn('aria-modal="true"', template_text)
+        self.assertIn('id="products-checkout-flow"', template_text)
+        for step in ("delivery", "address", "review", "success"):
+            self.assertIn(f'data-checkout-step="{step}"', template_text)
+        self.assertIn('id="products-cart-toast-region"', template_text)
         self.assertNotIn("products-page-tracking", template_text)
         self.assertNotIn("products-toast-layer", template_text)
 
@@ -113,12 +117,9 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_includes_mobile_and_theme_tuning(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn("scroll-snap-type: x mandatory", template_text)
-        self.assertIn(':root[data-theme="light"]', template_text)
-        self.assertIn(
-            "--shadow-card: 0 6px 14px rgba(20, 40, 80, 0.12)",
-            template_text,
-        )
-        self.assertIn("padding-bottom: 12px", template_text)
+        self.assertIn(':root[data-theme="dark"]', template_text)
+        self.assertIn("--apteka-bg-accent: #1f55d6", template_text)
+        self.assertIn("--apteka-bg-input: #07173d", template_text)
 
     def test_products_template_sets_initial_payload_timeout(self) -> None:
         template_text = self._read_products_bundle_text()
@@ -126,17 +127,21 @@ class WidgetTemplateTests(unittest.TestCase):
 
     def test_products_template_scales_product_images(self) -> None:
         template_text = self._read_products_bundle_text()
-        self.assertIn("transform: scale(1.05)", template_text)
+        self.assertIn("object-fit: contain", template_text)
         self.assertIn("height: 208px", template_text)
-        self.assertIn(
-            "grid-template-rows: 208px 66px 24px 22px 40px 38px",
-            template_text,
-        )
+        self.assertIn("height: 150px", template_text)
 
-    def test_products_template_mobile_toolbar_is_single_row(self) -> None:
+    def test_products_template_mobile_toolbar_matches_kokiko_layout(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn("@media (max-width: 520px)", template_text)
-        self.assertIn("grid-template-columns: 72px minmax(0, 1fr) 36px 36px", template_text)
+        self.assertIn("grid-template-columns: minmax(92px, 1fr) auto", template_text)
+        self.assertIn('class="toolbar-actions"', template_text)
+
+    def test_products_template_uses_only_apteka_brand_and_server_bridge(self) -> None:
+        template_text = self._read_products_bundle_text()
+        self.assertNotIn("www.kokiko.md", template_text)
+        self.assertNotIn('market: "kokikomd"', template_text)
+        self.assertIn("window.ProductsApi", template_text)
 
 
 if __name__ == "__main__":

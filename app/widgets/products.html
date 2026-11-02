@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Search Products Mock</title>
     <link rel="stylesheet" href="./styles/widget-products.css" />
-    <link rel="stylesheet" href="./styles/commerce.css" />
   </head>
   <body>
     <main class="widget-shell search-mock" data-widget-shell="search_products">
@@ -38,28 +37,68 @@
                 </svg>
               </button>
             </label>
-            <button id="products-cart-button" class="cart-button" type="button" aria-label="Корзина, 0 товаров" aria-controls="products-page-my-cart">
-              <svg class="products-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h2l3 12h11l3-9H6"></path><circle cx="9" cy="20" r="1"></circle><circle cx="19" cy="20" r="1"></circle></svg>
-              <span id="cart-count" aria-hidden="true">0</span>
-            </button>
-            <button
-              class="support-button"
-              id="products-support-button"
-              type="button"
-              aria-label="Поддержка"
-              aria-controls="products-support-popup"
-              aria-expanded="false"
-            >
-              <svg class="products-icon products-icon--headset" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 13a8 8 0 0 1 16 0"></path>
-                <rect x="3.5" y="12" width="4" height="6" rx="1.5"></rect>
-                <rect x="16.5" y="12" width="4" height="6" rx="1.5"></rect>
-                <path d="M20.5 18.5a3.5 3.5 0 0 1-3.5 3.5H13"></path>
-              </svg>
-            </button>
+            <div class="toolbar-actions">
+              <button
+                class="language-toggle-button"
+                id="products-language-toggle"
+                type="button"
+                aria-label="Сменить язык"
+                title="Сменить язык"
+              >
+                RO
+              </button>
+              <button
+                class="theme-toggle-button"
+                id="products-theme-toggle"
+                type="button"
+                aria-label="Темная тема"
+                title="Темная тема"
+              >
+                <svg class="products-icon products-icon--theme" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.8 6.8 0 0 0 9.8 9.8Z"></path>
+                </svg>
+              </button>
+              <button
+                class="cart-button"
+                id="products-cart-button"
+                type="button"
+                aria-label="Корзина, 0 товаров"
+                aria-controls="products-cart-panel"
+                aria-expanded="false"
+              >
+                <svg class="products-icon products-icon--cart" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 7h12l-1 12H7L6 7z"></path>
+                  <path d="M9 7a3 3 0 0 1 6 0"></path>
+                </svg>
+                <span class="cart-button-count" id="products-cart-count">0</span>
+              </button>
+              <button
+                class="support-button"
+                id="products-support-button"
+                type="button"
+                aria-label="Поддержка"
+                aria-controls="products-support-popup"
+                aria-expanded="false"
+              >
+                <svg class="products-icon products-icon--headset" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 13a8 8 0 0 1 16 0"></path>
+                  <rect x="3.5" y="12" width="4" height="6" rx="1.5"></rect>
+                  <rect x="16.5" y="12" width="4" height="6" rx="1.5"></rect>
+                  <path d="M20.5 18.5a3.5 3.5 0 0 1-3.5 3.5H13"></path>
+                </svg>
+              </button>
+            </div>
           </section>
 
-        <div class="carousel-frame">
+          <div
+            class="products-cart-toast-region"
+            id="products-cart-toast-region"
+            aria-live="polite"
+            aria-atomic="false"
+            hidden
+          ></div>
+
+          <div class="carousel-frame">
             <div class="carousel-arrow-wrap left">
               <button class="carousel-arrow left" id="products-arrow-left" aria-label="Предыдущий">
                 <svg class="products-icon products-icon--chevron" viewBox="0 0 24 24" aria-hidden="true">
@@ -81,31 +120,327 @@
             </div>
           </div>
 
-        </section>
-        <p id="commerce-notice" aria-live="polite" hidden></p>
-        <p id="commerce-error" role="alert" hidden></p>
-        <section id="products-page-my-cart" class="commerce-page" aria-labelledby="cart-heading" hidden>
-          <header class="commerce-header">
-            <h2 id="cart-heading" tabindex="-1">Корзина</h2>
-            <button type="button" data-commerce="search">Продолжить покупки</button>
-          </header>
-          <div id="cart-items"></div>
-          <footer class="commerce-footer">
-            <strong id="cart-total"></strong>
-            <button type="button" id="cart-checkout" class="commerce-primary">Оформить заказ</button>
-          </footer>
-        </section>
-        <section id="products-page-checkout" class="commerce-page" aria-labelledby="checkout-heading" hidden>
-          <header class="commerce-header">
-            <h2 id="checkout-heading" tabindex="-1">Оформление заказа</h2>
-            <button type="button" data-commerce="cart">Вернуться в корзину</button>
-          </header>
-          <form id="checkout-form"></form>
-          <div id="checkout-review" hidden></div>
-          <div id="checkout-success" role="status" hidden></div>
-        </section>
+          <div class="products-cart-layer" id="products-cart-layer" hidden>
+            <aside
+              class="products-cart-panel"
+              id="products-cart-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="products-cart-title"
+              tabindex="-1"
+            >
+              <header class="products-cart-header">
+                <div class="products-cart-header-text">
+                  <p class="products-cart-kicker">Apteka</p>
+                  <h2 class="products-cart-title" id="products-cart-title">Корзина</h2>
+                </div>
+                <button
+                  class="products-cart-close"
+                  id="products-cart-close"
+                  type="button"
+                  aria-label="Закрыть корзину"
+                >
+                  ×
+                </button>
+              </header>
 
-        <div class="products-support-layer" id="products-support-layer" hidden>
+              <p id="products-cart-status" role="alert" hidden></p>
+              <div class="products-cart-items" id="products-cart-items" aria-live="polite"></div>
+
+
+
+              <form class="products-checkout-form products-checkout-flow" id="products-checkout-flow" hidden novalidate>
+                <input id="products-checkout-flow-city" name="city" type="hidden" value="Chisinau" />
+                <input id="products-checkout-flow-address" name="address" type="hidden" />
+
+                <div class="products-checkout-heading">
+                  <p class="products-cart-kicker">Apteka</p>
+                  <h3 class="products-checkout-title">Оформление заказа</h3>
+                </div>
+
+                <nav class="products-checkout-steps" aria-label="Checkout steps">
+                  <span data-step-indicator="delivery">Доставка</span>
+                  <span data-step-indicator="address">Адрес и время</span>
+                  <span data-step-indicator="review">Обзор и оплата</span>
+                </nav>
+
+                <section class="products-checkout-step" data-checkout-step="delivery">
+                  <fieldset class="products-checkout-delivery">
+                    <legend>Выберите способ доставки:</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name="products-delivery-method"
+                        value="courier"
+                        checked
+                      />
+                      <span>Курьерская доставка</span>
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="products-delivery-method"
+                        value="pickup"
+                      />
+                      <span>Самовывоз</span>
+                    </label>
+                  </fieldset>
+                </section>
+
+                <section class="products-checkout-step" data-checkout-step="address" hidden>
+                  <div class="products-checkout-grid">
+                    <label class="products-checkout-field">
+                      <span>Имя*</span>
+                      <input
+                        id="products-checkout-flow-name"
+                        name="customer_name"
+                        type="text"
+                        autocomplete="name"
+                        required
+                      />
+                    </label>
+
+                    <label class="products-checkout-field products-checkout-phone-field">
+                      <span>Номер телефона*</span>
+                      <div class="products-phone-control">
+                        <select
+                          id="products-checkout-flow-country"
+                          name="phone_country"
+                          aria-label="Country code"
+                        >
+                          <option value="MD">MD +373</option>
+                        </select>
+                        <input
+                          id="products-checkout-flow-phone"
+                          name="customer_phone"
+                          type="tel"
+                          inputmode="numeric"
+                          autocomplete="tel-national"
+                          placeholder="XX XXX XXX"
+                          required
+                        />
+                      </div>
+                    </label>
+
+                    <label class="products-checkout-field products-custom-select-field">
+                      <span>Регион*</span>
+                      <select
+                        class="products-native-select"
+                        id="products-checkout-flow-region"
+                        name="region_id"
+                        aria-hidden="true"
+                        tabindex="-1"
+                      >
+                        <option value="">Выберите регион</option>
+
+                      </select>
+                      <button
+                        class="products-select-trigger"
+                        id="products-checkout-flow-region-trigger"
+                        type="button"
+                        data-select-trigger="products-checkout-flow-region"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                      >
+                        <span data-select-label>Выберите регион</span>
+                      </button>
+                      <div
+                        class="products-select-menu"
+                        id="products-checkout-flow-region-menu"
+                        data-select-for="products-checkout-flow-region"
+                        role="listbox"
+                        hidden
+                      ></div>
+                    </label>
+
+                    <label class="products-checkout-field products-custom-select-field">
+                      <span>Сектор*</span>
+                      <select
+                        class="products-native-select"
+                        id="products-checkout-flow-sector"
+                        name="sector_id"
+                        aria-hidden="true"
+                        tabindex="-1"
+                      >
+                        <option value="">Выберите сектор</option>
+
+                      </select>
+                      <button
+                        class="products-select-trigger"
+                        id="products-checkout-flow-sector-trigger"
+                        type="button"
+                        data-select-trigger="products-checkout-flow-sector"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                      >
+                        <span data-select-label>Выберите сектор</span>
+                      </button>
+                      <div
+                        class="products-select-menu"
+                        id="products-checkout-flow-sector-menu"
+                        data-select-for="products-checkout-flow-sector"
+                        role="listbox"
+                        hidden
+                      ></div>
+                    </label>
+
+                    <label class="products-checkout-field products-courier-only products-checkout-field--wide">
+                      <span>Улица*</span>
+                      <input
+                        id="products-checkout-flow-street"
+                        name="street"
+                        type="text"
+                        autocomplete="street-address"
+                      />
+                    </label>
+
+                    <label class="products-checkout-field products-courier-only">
+                      <span>№ дома*</span>
+                      <input id="products-checkout-flow-building" name="building" type="text" />
+                    </label>
+
+                    <label class="products-checkout-field products-courier-only">
+                      <span>Квартира</span>
+                      <input id="products-checkout-flow-apartment" name="apartment" type="text" />
+                    </label>
+
+                    <label class="products-checkout-field products-courier-only">
+                      <span>Подъезд</span>
+                      <input id="products-checkout-flow-entrance" name="entrance" type="text" />
+                    </label>
+
+                    <label class="products-checkout-field products-courier-only">
+                      <span>Этаж</span>
+                      <input id="products-checkout-flow-floor" name="floor" type="text" />
+                    </label>
+
+                    <label class="products-checkout-field products-courier-only">
+                      <span>Код домофона</span>
+                      <input id="products-checkout-flow-intercom" name="intercom_code" type="text" />
+                    </label>
+
+                    <label class="products-checkout-field products-pickup-only products-checkout-field--wide">
+                      <span>Аптека</span>
+                      <select
+                        class="products-pharmacy-select"
+                        id="products-checkout-flow-pharmacy"
+                        name="pharmacy_id"
+                        aria-hidden="true"
+                        tabindex="-1"
+                      >
+                        <option value="">Выберите аптеку</option>
+                      </select>
+                      <div
+                        class="products-pharmacy-options"
+                        id="products-checkout-flow-pharmacy-options"
+                        role="radiogroup"
+                        aria-label="Аптека"
+                      ></div>
+                    </label>
+
+                    <label class="products-checkout-field products-checkout-field--wide">
+                      <span>Email</span>
+                      <input
+                        id="products-checkout-flow-email"
+                        name="email"
+                        type="email"
+                        autocomplete="email"
+                      />
+                    </label>
+                  </div>
+
+                  <fieldset class="products-delivery-window">
+                    <legend>Выберите время доставки:</legend>
+                    <div id="products-checkout-flow-delivery-windows"></div>
+                  </fieldset>
+
+                  <label class="products-checkout-field products-checkout-field--wide">
+                    <span>Комментарий</span>
+                    <textarea
+                      id="products-checkout-flow-comment"
+                      name="comment"
+                      rows="2"
+                    ></textarea>
+                  </label>
+                </section>
+
+                <section class="products-checkout-step" data-checkout-step="review" hidden>
+                  <div class="products-checkout-review" id="products-checkout-flow-review"></div>
+
+                  <fieldset class="products-payment-methods">
+                    <legend>Выберите способ оплаты:</legend>
+                    <label>
+                      <input type="radio" name="products-payment-method" value="cash" checked />
+                      <span>Наличными</span>
+                    </label>
+                    <label>
+                      <input type="radio" name="products-payment-method" value="card" />
+                      <span>Картой при получении</span>
+                    </label>
+                  </fieldset>
+
+                  <label class="products-checkout-consent">
+                    <input id="products-checkout-flow-consent" type="checkbox" required />
+                    <span>Согласен с пользовательским соглашением / политикой конфиденциальности</span>
+                  </label>
+                </section>
+
+                <section class="products-checkout-step" data-checkout-step="success" hidden>
+                  <div class="products-checkout-success">
+                    <div class="products-checkout-success-icon" aria-hidden="true">✓</div>
+                    <h3 class="products-checkout-success-title" id="products-checkout-flow-success-title"></h3>
+                    <p class="products-checkout-success-text" id="products-checkout-flow-success-text"></p>
+                    <p class="products-checkout-success-order">
+                      <span id="products-checkout-flow-order-label"></span>
+                      <strong id="products-checkout-flow-order-number"></strong>
+                    </p>
+                    <button
+                      class="products-checkout-success-continue"
+                      id="products-checkout-flow-continue"
+                      type="button"
+                      data-checkout-action="continue"
+                    ></button>
+                  </div>
+                </section>
+
+                <div
+                  class="products-checkout-status"
+                  id="products-checkout-flow-status"
+                  role="status"
+                  aria-live="polite"
+                ></div>
+
+                <div class="products-checkout-actions">
+                  <button class="products-checkout-back" id="products-checkout-flow-back" type="button" data-checkout-action="back">
+                    Назад
+                  </button>
+                  <button class="products-checkout-next" type="button" data-checkout-action="next">
+                    Продолжить
+                  </button>
+                  <button class="products-order-submit" id="products-checkout-flow-submit" type="submit" hidden>
+                    Оформить
+                  </button>
+                </div>
+              </form>
+
+              <footer class="products-cart-footer">
+                <div class="products-cart-total-row">
+                  <span>Итого</span>
+                  <strong id="products-cart-total">0.00 MDL</strong>
+                </div>
+                <button
+                  class="products-cart-checkout"
+                  id="products-cart-checkout"
+                  type="button"
+                  disabled
+                >
+                  Оформить заказ
+                </button>
+              </footer>
+            </aside>
+          </div>
+
+          <div class="products-support-layer" id="products-support-layer" hidden>
           <section
             class="products-support-popup"
             id="products-support-popup"
@@ -173,16 +508,15 @@
             </a>
           </section>
         </div>
-
+        </section>
       </div>
     </main>
     <script src="./scripts/state.js"></script>
+    <script src="./scripts/products-api.js"></script>
     <script src="./scripts/products-render.js"></script>
     <script src="./scripts/products-tools.js"></script>
     <script src="./scripts/products-support.js"></script>
     <script src="./scripts/products-theme.js"></script>
-    <script src="./scripts/products-commerce.js"></script>
     <script src="./scripts/products.js"></script>
   </body>
 </html>
-

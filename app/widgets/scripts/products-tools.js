@@ -7,9 +7,14 @@
     const {
       normalizeText,
       normalizeLanguage,
+      setActiveLanguage,
       getActiveLanguage,
       extractItems,
       mapProduct,
+      resolveImageUrl,
+      getFallbackImage,
+      normalizeCartQuantity,
+      writeStoredCart,
       setLoading,
       debugLog,
     } = utils;
@@ -33,6 +38,18 @@
       ).toLowerCase();
     };
 
+    const extractCheckoutStep = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return "";
+      }
+      const step = normalizeText(
+        payload.checkout_step || payload.checkoutStep || payload.step,
+      ).toLowerCase();
+      return ["delivery", "address", "review", "success"].includes(step)
+        ? step
+        : "";
+    };
+
     const hasSearchResultsPayload = (payload) => {
       if (!payload || typeof payload !== "object") {
         return false;
@@ -43,6 +60,112 @@
         Object.prototype.hasOwnProperty.call(payload, "no_results") ||
         Object.prototype.hasOwnProperty.call(payload, "query")
       );
+    };
+
+    const extractCartItems = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return [];
+      }
+      const cartNode =
+        payload.cart && typeof payload.cart === "object" ? payload.cart : {};
+      const candidates = [cartNode.items, payload.cart_items, payload.items];
+      for (const candidate of candidates) {
+        if (Array.isArray(candidate)) {
+          return candidate.filter((item) => item && typeof item === "object");
+        }
+      }
+      return [];
+    };
+
+    const hasCartPayload = (payload) => {
+      if (!payload || typeof payload !== "object") {
+        return false;
+      }
+      return (
+        Boolean(payload.cart && typeof payload.cart === "object") ||
+        Array.isArray(payload.cart_items)
+      );
+    };
+
+    const mapCartItem = (item) => {
+      const id = normalizeText(item.id || item.product_id);
+      const name = normalizeText(item.name);
+      const price = Number(item.price);
+      if (!id || !name || !Number.isFinite(price) || price <= 0) {
+        return null;
+      }
+      return {
+        id,
+        name,
+        manufacturer: normalizeText(item.manufacturer),
+        price,
+        imageUrl:
+          resolveImageUrl(item.image_url || item.imageUrl || item.image) ||
+          getFallbackImage(),
+        productUrl: normalizeText(item.product_url || item.productUrl),
+        quantity: normalizeCartQuantity(item.quantity),
+      };
+    };
+
+    const applyCartPayload = (payload) => {
+      if (!hasCartPayload(payload)) {
+        return false;
+      }
+      state.cartItems = extractCartItems(payload)
+        .map(mapCartItem)
+        .filter(Boolean);
+      writeStoredCart();
+      return true;
+    };
+
+    const parsePayloadText = (value) => {
+      const text = normalizeText(value);
+      if (!text || !text.startsWith("{")) {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(text);
+        return parsed && typeof parsed === "object" ? parsed : null;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const unwrapToolPayload = (candidate) => {
+      if (!candidate || typeof candidate !== "object") {
+        return null;
+      }
+      const nestedCandidates = [
+        candidate.structuredContent,
+        candidate.result?.structuredContent,
+        candidate.result,
+        candidate.payload?.structuredContent,
+        candidate.payload,
+        candidate.data?.structuredContent,
+        candidate.data,
+        candidate,
+      ];
+      for (const nested of nestedCandidates) {
+        if (!nested || typeof nested !== "object") {
+          continue;
+        }
+        if (nested !== candidate) {
+          const unwrapped = unwrapToolPayload(nested);
+          if (unwrapped) {
+            return unwrapped;
+          }
+        }
+        if (Array.isArray(nested.content)) {
+          for (const contentItem of nested.content) {
+            const parsed = parsePayloadText(contentItem?.text);
+            if (parsed) {
+              return parsed;
+            }
+          }
+        }
+        return nested;
+      }
+      return null;
     };
 
     const extractInitialToolPayload = () => {
@@ -64,10 +187,10 @@
         if (!candidate || typeof candidate !== "object") {
           continue;
         }
-        return candidate.structuredContent &&
-          typeof candidate.structuredContent === "object"
-          ? candidate.structuredContent
-          : candidate;
+        const payload = unwrapToolPayload(candidate);
+        if (payload) {
+          return payload;
+        }
       }
       return null;
     };
@@ -88,18 +211,19 @@
         if (!candidate || typeof candidate !== "object") {
           continue;
         }
-        return candidate.structuredContent &&
-          typeof candidate.structuredContent === "object"
-          ? candidate.structuredContent
-          : candidate;
+        const payload = unwrapToolPayload(candidate);
+        if (payload) {
+          return payload;
+        }
       }
       return null;
     };
 
-    const applyInitialToolPayload = (payload) => {
-      if (!payload || typeof payload !== "object") {
+    const applyInitialToolPayload = (candidate) => {
+      if (!candidate || typeof candidate !== "object") {
         return false;
       }
+      const payload = ctx.api.hydrate(candidate);
       if (normalizeText(payload.api_base_url)) {
         state.apiBaseUrl = normalizeText(payload.api_base_url);
       }
@@ -112,10 +236,7 @@
         state.requestedPage = requestedPage;
       }
       theme?.updateFromPayload(payload);
-      if (ctx.commerce?.applyPayload(payload)) {
-        state.loadedOnce = true;
-        return true;
-      }
+      const cartApplied = applyCartPayload(payload);
       const query = normalizeText(payload.query);
       if (query) {
         try {
@@ -124,11 +245,7 @@
           // ignore storage write errors
         }
       }
-      const isSearchPayload =
-        hasSearchResultsPayload(payload) ||
-        !requestedPage ||
-        requestedPage === "search";
-      if (isSearchPayload) {
+      if (hasSearchResultsPayload(payload)) {
         const mapped = extractItems(payload)
           .map(mapProduct)
           .filter((product) => product.id);
@@ -137,7 +254,46 @@
         }
         state.products = mapped;
         state.lastQuery = query;
+      }
+      if (
+        cartApplied &&
+        (requestedPage === "cart" || requestedPage === "checkout")
+      ) {
         state.loadedOnce = true;
+        window.setTimeout(() => {
+          if (requestedPage === "checkout") {
+            ctx.actions.openCart();
+            ctx.actions.openCheckout();
+            const checkoutStep = extractCheckoutStep(payload);
+            if (
+              checkoutStep &&
+              typeof ctx.actions.setCheckoutStep === "function"
+            ) {
+              ctx.actions.setCheckoutStep(checkoutStep);
+            }
+            return;
+          }
+          ctx.actions.openCart();
+        }, 0);
+        return true;
+      }
+      const isSearchPayload =
+        hasSearchResultsPayload(payload) ||
+        !requestedPage ||
+        requestedPage === "search";
+      if (isSearchPayload) {
+        if (query && input) {
+          input.value = query;
+        }
+        state.lastQuery = query;
+        state.loadedOnce = true;
+        return true;
+      }
+      if (cartApplied) {
+        state.loadedOnce = true;
+        window.setTimeout(() => {
+          ctx.actions.openCart();
+        }, 0);
         return true;
       }
       state.loadedOnce = true;
@@ -150,6 +306,7 @@
       }
       return (
         typeof payload.theme === "string" ||
+        typeof payload.language === "string" ||
         typeof payload.theme_mode === "string" ||
         typeof payload.mode === "string" ||
         typeof payload.auto_disabled === "boolean"
@@ -200,17 +357,40 @@
         return null;
       };
 
+      const applyPreferencePayload = (payload) => {
+        const language = normalizeLanguage(payload.language);
+        if (language) {
+          const action = normalizeText(payload.action).toLowerCase();
+          if (typeof ctx.actions.setLanguage === "function") {
+            ctx.actions.setLanguage(language);
+          } else {
+            setActiveLanguage(language, {
+              persist: [
+                "open_checkout",
+                "set_widget_language",
+                "set_widget_theme",
+              ].includes(action),
+            });
+          }
+        }
+        theme.updateFromPayload(payload);
+        ctx.ui.renderProducts();
+        ctx.ui.renderCart();
+        ctx.ui.renderCheckout();
+      };
+
       const getThemeSignature = (payload) => {
         if (!payload || typeof payload !== "object") {
           return "";
         }
         const themeValue = normalizeText(payload.theme);
+        const languageValue = normalizeText(payload.language);
         const modeValue = normalizeText(payload.theme_mode || payload.mode);
         const autoValue =
           typeof payload.auto_disabled === "boolean"
             ? String(payload.auto_disabled)
             : "";
-        return [themeValue, modeValue, autoValue].join("|");
+        return [themeValue, languageValue, modeValue, autoValue].join("|");
       };
 
       const MAX_STABLE_THEME_TICKS = 50;
@@ -225,7 +405,7 @@
           return false;
         }
         lastThemeSignature = signature;
-        theme.updateFromPayload(payload);
+        applyPreferencePayload(payload);
         return true;
       };
 
@@ -234,7 +414,7 @@
         if (!isThemePayload(messagePayload)) {
           return;
         }
-        theme.updateFromPayload(messagePayload);
+        applyPreferencePayload(messagePayload);
       };
       window.addEventListener("message", onMessage, { passive: true });
       let stableTicks = 0;
@@ -262,6 +442,7 @@
       }
       setLoading(false);
       ctx.ui.renderProducts();
+      ctx.ui.renderCart();
       return true;
     };
 
@@ -285,6 +466,7 @@
           window.removeEventListener("message", onMessage);
           setLoading(false);
           ctx.ui.renderProducts();
+          ctx.ui.renderCart();
           resolve(true);
         };
 
@@ -368,6 +550,14 @@
     };
 
     ctx.actions.searchProducts = searchProducts;
+    window.addEventListener("openai:set_globals", (event) => {
+      if (ctx.api.busy()) return;
+      const output = event.detail?.globals?.toolOutput;
+      if (!output) return;
+      applyInitialToolPayload(output.structuredContent || output);
+      ctx.ui.renderProducts();
+      ctx.ui.renderCart();
+    });
     ctx.tools.waitForInitialPayload = waitForInitialPayload;
     ctx.tools.listenForThemeUpdates = listenForThemeUpdates;
   };
