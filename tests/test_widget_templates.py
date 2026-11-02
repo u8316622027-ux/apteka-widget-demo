@@ -56,9 +56,9 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("https://t.me/aptekamd_bot", template_text)
         self.assertIn("viber://pa?chatURI=aptekamd_bot", template_text)
 
-    def test_products_template_renders_buy_links(self) -> None:
+    def test_products_template_renders_cart_actions_and_product_links(self) -> None:
         template_text = self._read_products_bundle_text()
-        self.assertIn('class="buy-link"', template_text)
+        self.assertIn('data-action="add-to-cart"', template_text)
         self.assertIn('target="_blank"', template_text)
         self.assertIn('rel="noopener noreferrer"', template_text)
 
@@ -71,11 +71,10 @@ class WidgetTemplateTests(unittest.TestCase):
         self.assertIn("--empty-card-bg", template_text)
         self.assertIn("--empty-icon-bg", template_text)
 
-    def test_products_template_removes_cart_and_checkout_ui(self) -> None:
+    def test_products_template_includes_cart_and_checkout_ui(self) -> None:
         template_text = self._read_products_bundle_text()
-        self.assertNotIn("products-cart-modal", template_text)
-        self.assertNotIn("products-page-checkout", template_text)
-        self.assertNotIn("products-page-my-cart", template_text)
+        self.assertIn("products-page-checkout", template_text)
+        self.assertIn("products-page-my-cart", template_text)
         self.assertNotIn("products-page-tracking", template_text)
         self.assertNotIn("products-toast-layer", template_text)
 
@@ -137,7 +136,7 @@ class WidgetTemplateTests(unittest.TestCase):
     def test_products_template_mobile_toolbar_is_single_row(self) -> None:
         template_text = self._read_products_bundle_text()
         self.assertIn("@media (max-width: 520px)", template_text)
-        self.assertIn("grid-template-columns: 120px 1fr 44px", template_text)
+        self.assertIn("grid-template-columns: 72px minmax(0, 1fr) 36px 36px", template_text)
 
 
 if __name__ == "__main__":

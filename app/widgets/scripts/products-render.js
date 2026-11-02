@@ -124,7 +124,7 @@
             normalizeText(product.productUrl) || "https://www.apteka.md/",
           );
           const actionButton = inStock
-            ? `<a class="buy-link" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer">Купить</a>`
+            ? `<button type="button" class="add-to-cart-button" data-action="add-to-cart" data-product-id="${escapeHtml(product.id)}">${getActiveLanguage() === "ro" ? "În coș" : "В корзину"}</button>`
             : `<button class="add-to-cart-button add-to-cart-button--ghost" data-action="support-contact" data-product-id="${escapeHtml(product.id)}">Уточнить наличие</button>`;
           const safeImageUrl = escapeHtml(product.imageUrl);
           const safeName = escapeHtml(product.name);
@@ -141,7 +141,7 @@
                 loading="lazy"
                 onerror="this.onerror=null;this.src='${safeFallbackImage}'"
               />
-              <h3 class="product-title">${safeName}</h3>
+              <h3 class="product-title"><a href="${safeProductUrl}" target="_blank" rel="noopener noreferrer">${safeName}</a></h3>
               <div class="product-manufacturer-row">
                 <p class="manufacturer">${safeManufacturer}</p>
               </div>

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Search Products Mock</title>
     <link rel="stylesheet" href="./styles/widget-products.css" />
+    <link rel="stylesheet" href="./styles/commerce.css" />
   </head>
   <body>
     <main class="widget-shell search-mock" data-widget-shell="search_products">
@@ -37,6 +38,10 @@
                 </svg>
               </button>
             </label>
+            <button id="products-cart-button" class="cart-button" type="button" aria-label="Корзина, 0 товаров" aria-controls="products-page-my-cart">
+              <svg class="products-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h2l3 12h11l3-9H6"></path><circle cx="9" cy="20" r="1"></circle><circle cx="19" cy="20" r="1"></circle></svg>
+              <span id="cart-count" aria-hidden="true">0</span>
+            </button>
             <button
               class="support-button"
               id="products-support-button"
@@ -75,6 +80,30 @@
               </button>
             </div>
           </div>
+
+        </section>
+        <p id="commerce-notice" aria-live="polite" hidden></p>
+        <p id="commerce-error" role="alert" hidden></p>
+        <section id="products-page-my-cart" class="commerce-page" aria-labelledby="cart-heading" hidden>
+          <header class="commerce-header">
+            <h2 id="cart-heading" tabindex="-1">Корзина</h2>
+            <button type="button" data-commerce="search">Продолжить покупки</button>
+          </header>
+          <div id="cart-items"></div>
+          <footer class="commerce-footer">
+            <strong id="cart-total"></strong>
+            <button type="button" id="cart-checkout" class="commerce-primary">Оформить заказ</button>
+          </footer>
+        </section>
+        <section id="products-page-checkout" class="commerce-page" aria-labelledby="checkout-heading" hidden>
+          <header class="commerce-header">
+            <h2 id="checkout-heading" tabindex="-1">Оформление заказа</h2>
+            <button type="button" data-commerce="cart">Вернуться в корзину</button>
+          </header>
+          <form id="checkout-form"></form>
+          <div id="checkout-review" hidden></div>
+          <div id="checkout-success" role="status" hidden></div>
+        </section>
 
         <div class="products-support-layer" id="products-support-layer" hidden>
           <section
@@ -152,6 +181,7 @@
     <script src="./scripts/products-tools.js"></script>
     <script src="./scripts/products-support.js"></script>
     <script src="./scripts/products-theme.js"></script>
+    <script src="./scripts/products-commerce.js"></script>
     <script src="./scripts/products.js"></script>
   </body>
 </html>

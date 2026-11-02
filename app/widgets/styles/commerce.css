@@ -1,0 +1,233 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none !important;
+}
+body {
+  overflow-y: auto;
+}
+.search-toolbar {
+  grid-template-columns: 150px minmax(0, 1fr) 48px 48px;
+}
+.cart-button {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--text-on-dark);
+  cursor: pointer;
+}
+#cart-count {
+  position: absolute;
+  right: -3px;
+  top: -5px;
+  border-radius: 12px;
+  padding: 1px 5px;
+  background: var(--bg-accent);
+  color: white;
+  font-size: 11px;
+}
+.product-title a {
+  color: inherit;
+  text-decoration: none;
+}
+.product-title a:hover {
+  text-decoration: underline;
+}
+.commerce-page {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  padding: 22px;
+  margin-top: 10px;
+}
+.commerce-header,
+.commerce-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.commerce-header {
+  margin-bottom: 20px;
+}
+.commerce-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+.commerce-footer {
+  margin-top: 22px;
+}
+.commerce-page button {
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  color: var(--text-on-dark);
+  font: inherit;
+  cursor: pointer;
+}
+.commerce-page .commerce-primary {
+  background: var(--bg-accent);
+  color: #fff;
+  border-color: var(--bg-accent);
+}
+.commerce-page button:disabled,
+.cart-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.commerce-page :focus-visible,
+.cart-button:focus-visible,
+.add-to-cart-button:focus-visible,
+.product-title a:focus-visible {
+  outline: 3px solid #79a8ff;
+  outline-offset: 3px;
+}
+.cart-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-strong);
+}
+.cart-row h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.cart-row p {
+  margin: 0;
+}
+.cart-quantity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cart-quantity button {
+  width: 36px;
+  padding: 8px;
+}
+#checkout-form,
+#checkout-review {
+  display: grid;
+  gap: 18px;
+}
+.checkout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.commerce-page label {
+  display: grid;
+  gap: 7px;
+  font-size: 14px;
+}
+.commerce-page fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 16px;
+}
+.commerce-page legend {
+  padding: 0 6px;
+}
+.commerce-page input:not([type="radio"], [type="checkbox"]),
+.commerce-page select,
+.commerce-page textarea {
+  min-width: 0;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-on-dark);
+  font: inherit;
+}
+.commerce-page .commerce-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+.commerce-choice input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  accent-color: var(--bg-accent);
+}
+.commerce-hint {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.commerce-total {
+  font-size: 20px;
+  font-weight: 700;
+}
+.commerce-page p {
+  overflow-wrap: anywhere;
+}
+.commerce-page a {
+  color: #89b3ff;
+}
+:root[data-theme="light"] .commerce-page a {
+  color: #184bbb;
+}
+#commerce-error {
+  background: #fff0f0;
+  color: #9f1239;
+  padding: 12px;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+#commerce-notice {
+  color: var(--text-on-dark);
+  font-size: 14px;
+}
+#checkout-success {
+  padding: 20px 0;
+  font-size: 22px;
+}
+@media (max-width: 520px) {
+  .search-toolbar {
+    grid-template-columns: 72px minmax(0, 1fr) 36px 36px;
+    gap: 6px;
+  }
+  .search-logo-image {
+    width: 72px;
+    height: 32px;
+  }
+  .cart-button,
+  .support-button {
+    width: 36px;
+    height: 36px;
+  }
+  .search-input-wrap input {
+    padding-left: 10px;
+    font-size: 12px;
+  }
+  .commerce-page {
+    padding: 14px;
+  }
+  .checkout-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cart-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .cart-row > div:first-child {
+    grid-column: 1 / -1;
+  }
+  .commerce-header h2 {
+    font-size: 19px;
+  }
+}

@@ -112,6 +112,10 @@
         state.requestedPage = requestedPage;
       }
       theme?.updateFromPayload(payload);
+      if (ctx.commerce?.applyPayload(payload)) {
+        state.loadedOnce = true;
+        return true;
+      }
       const query = normalizeText(payload.query);
       if (query) {
         try {

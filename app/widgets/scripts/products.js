@@ -10,6 +10,7 @@
     window.ProductsTheme.attach(ctx);
   }
   window.ProductsTools.attach(ctx);
+  window.ProductsCommerce.attach(ctx);
   if (typeof window.ProductsSupport?.attach === "function") {
     window.ProductsSupport.attach(ctx);
   }
@@ -48,6 +49,10 @@
       event.preventDefault();
       event.stopPropagation();
       actions.openSupportPopup();
+    }
+    if (target.dataset.action === "add-to-cart") {
+      event.preventDefault();
+      ctx.commerce.addProduct(target.dataset.productId);
     }
   });
 

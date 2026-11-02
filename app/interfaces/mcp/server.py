@@ -505,6 +505,9 @@ def _validate_value(value: Any, schema: dict[str, Any], *, path: str) -> str | N
                     return f"{path}.{field_name} is required"
 
         properties = schema.get("properties")
+        if schema.get("additionalProperties") is False and isinstance(properties, dict):
+            if any(key not in properties for key in value):
+                return f"{path} contains unsupported fields"
         if isinstance(properties, dict):
             for field_name, field_schema in properties.items():
                 if field_name not in value or not isinstance(field_schema, dict):
@@ -526,6 +529,8 @@ def _validate_value(value: Any, schema: dict[str, Any], *, path: str) -> str | N
     if expected_type == "array":
         if not isinstance(value, list):
             return f"{path} must be an array"
+        if isinstance(schema.get("minItems"), int) and len(value) < schema["minItems"]:
+            return f"{path} must contain at least {schema['minItems']} items"
         item_schema = schema.get("items")
         if isinstance(item_schema, dict):
             for index, item in enumerate(value):
