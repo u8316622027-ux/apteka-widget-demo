@@ -12,6 +12,9 @@ from app.interfaces.mcp.tools.checkout_tools import checkout_order
 from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
 
+# Change this version when the widget bundle changes to invalidate host UI caches.
+PRODUCTS_WIDGET_TEMPLATE = "ui://widget/products.html?v=kokiko-2"
+
 
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
@@ -55,7 +58,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
                 "required": ["query"],
             },
             handler=_search_products_handler,
-            output_template="ui://widget/products.html",
+            output_template=PRODUCTS_WIDGET_TEMPLATE,
             ui=widget_ui_config,
             annotations={
                 "readOnlyHint": True,
@@ -219,7 +222,7 @@ def _commerce_tools(ui):
                 "additionalProperties": False,
             },
             handler=handler,
-            output_template="ui://widget/products.html",
+            output_template=PRODUCTS_WIDGET_TEMPLATE,
             ui=ui,
             annotations={"readOnlyHint": readonly, "openWorldHint": True, "destructiveHint": False},
             tool_invocation={"invoking": "Loading…", "invoked": "Done."},

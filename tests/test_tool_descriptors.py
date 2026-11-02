@@ -12,11 +12,44 @@ def test_tool_descriptor_includes_ui_meta_for_widget() -> None:
     registry = tool_registry.create_tool_registry()
     payload = tool_registry.serialize_tool_definition(registry["search_products"])
 
-    assert payload["outputTemplate"] == "ui://widget/products.html"
-    assert payload["_meta"]["openai/outputTemplate"] == "ui://widget/products.html"
+    assert payload["outputTemplate"] == "ui://widget/products.html?v=kokiko-2"
+    assert payload["_meta"]["openai/outputTemplate"] == payload["outputTemplate"]
+    assert payload["_meta"]["ui"]["resourceUri"] == payload["outputTemplate"]
     assert payload["_meta"]["openai/widgetDomain"]
     assert payload["_meta"]["openai/widgetCSP"]["connect_domains"]
     assert payload["_meta"]["openai/widgetCSP"]["resource_domains"]
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "ui://widget/products.html?v=kokiko-2",
+        "ui://widget/products.html",
+    ],
+)
+def test_versioned_resource_and_old_connection_both_serve_current_modal(uri):
+    mcp_server._reset_server_caches_for_tests()
+    response = mcp_server.handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "resources/read",
+            "params": {"uri": uri},
+        }
+    )
+    assert "error" not in response
+    content = response["result"]["contents"][0]
+    assert content["uri"] == uri
+    assert 'id="products-cart-panel"' in content["text"]
+    assert 'id="products-checkout-flow"' in content["text"]
+    assert "window.ProductsApi" in content["text"]
+
+
+def test_all_widget_tools_use_the_same_versioned_template():
+    registry = tool_registry.create_tool_registry()
+    assert {tool.output_template for tool in registry.values() if tool.output_template} == {
+        "ui://widget/products.html?v=kokiko-2"
+    }
 
 
 def test_tool_descriptor_includes_invocation_messages() -> None:

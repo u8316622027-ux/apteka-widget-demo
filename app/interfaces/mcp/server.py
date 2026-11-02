@@ -458,7 +458,8 @@ def _widget_resource_index() -> dict[str, dict[str, Any]]:
         uri = tool.output_template.strip()
         if not uri.startswith("ui://widget/"):
             continue
-        relative_path = uri.removeprefix("ui://widget/").strip()
+        unversioned_uri = uri.partition("?")[0]
+        relative_path = unversioned_uri.removeprefix("ui://widget/").strip()
         if not relative_path:
             continue
         ui_domain = str(tool.ui.get("domain") or "").strip()
@@ -485,6 +486,8 @@ def _widget_resource_index() -> dict[str, dict[str, Any]]:
                 "connect_domains": normalized_connect_domains,
             },
         )
+        # Existing connections may still request the previously advertised URI.
+        mapping.setdefault(unversioned_uri, mapping[uri])
     return mapping
 
 
