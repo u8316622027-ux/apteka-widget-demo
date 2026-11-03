@@ -19,9 +19,10 @@ from app.interfaces.mcp.tools.cart_tools import (
     _build_default_token_store,
     my_cart,
 )
-from app.interfaces.mcp.tools.checkout_api import AptekaCheckoutClient
+from app.interfaces.mcp.tools.checkout_api import AptekaCheckoutClient, OrderValidationError
 
-PAYMENT_METHODS = {"cash_on_receipt", "card_on_receipt"}
+PAYMENT_TYPES = {"cash_on_receipt": "cash", "card_on_receipt": "card"}
+PAYMENT_METHODS = set(PAYMENT_TYPES)
 _REVIEWS: dict[str, dict[str, Any]] = {}
 _REVIEW_LOCK = threading.RLock()
 REVIEW_TTL = 900
@@ -205,7 +206,7 @@ def _build_review(args, cart, references, api, language):
         "note": str(args.get("comment") or "").strip(),
         "dontCallMe": bool(args.get("dont_call_me")),
         "delivery": delivery,
-        "payment": {"type": payment, "useBonuses": False},
+        "payment": {"type": PAYMENT_TYPES[payment], "useBonuses": False},
     }
     preview = {
         "items": cart["items"],
@@ -249,8 +250,12 @@ def _submit(args, session_id, token, repo, store, api):
         if _fingerprint(cart) != review["fingerprint"]:
             raise ValueError("The cart has changed; review the order again")
         review["state"] = "submitting"
-        # Never automatically retry an ambiguous order submission.
-        order = api.send_order(token, review["order"], review["language"])
+        # A validation rejection is definitive. Other failures keep the duplicate guard.
+        try:
+            order = api.send_order(token, review["order"], review["language"])
+        except OrderValidationError:
+            review["state"] = "review"
+            raise
         result = {
             "status": "order_submitted",
             "cart_session_id": session_id,

@@ -7,7 +7,7 @@ import pytest
 
 from app.domain.cart.entities import CartItem, CartSnapshot, CartToken
 from app.domain.cart.service import _SESSION_LOCKS
-from app.interfaces.mcp.tools import checkout_tools
+from app.interfaces.mcp.tools import checkout_api, checkout_tools
 from app.interfaces.mcp.tools.cart_tools import InMemoryCartTokenStore
 
 
@@ -130,7 +130,65 @@ def test_pickup_review_submit_uses_same_cart_and_is_idempotent(checkout):
     assert token == "private-token"
     assert order["delivery"]["type"] == "pick-up"
     assert order["delivery"]["pharmacy_id"] == 1
-    assert order["payment"]["type"] == "cash_on_receipt"
+    assert order["payment"]["type"] == "cash"
+
+
+@pytest.mark.parametrize("payment,wire", [("cash_on_receipt", "cash"), ("card_on_receipt", "card")])
+@pytest.mark.parametrize("delivery_method", ["pickup", "courier"])
+def test_api_receives_supported_payment_values(checkout, payment, wire, delivery_method):
+    call, _, client = checkout
+    review = call(
+        **review_arguments(
+            payment_method=payment,
+            delivery_method=delivery_method,
+            region_id=2,
+            city_id=24,
+            address={"street": "Dacia", "house_number": "10"},
+        )
+    )
+    assert review["review"]["payment_method"] == payment
+    call(action="submit", confirmation_id=review["confirmation_id"], terms_accepted=True)
+    assert client.orders[0][1]["payment"]["type"] == wire
+
+
+def test_explicit_validation_rejection_allows_manual_retry_without_automatic_retry(checkout):
+    call, _, client = checkout
+    review = call(**review_arguments())
+    calls = []
+
+    def send(token, payload, language):
+        calls.append(payload)
+        if len(calls) == 1:
+            raise checkout_api.OrderValidationError(["payment.type"], language=language)
+        return {"id": 123, "number": "AP-123"}
+
+    client.send_order = send
+    args = dict(action="submit", confirmation_id=review["confirmation_id"], terms_accepted=True)
+    with pytest.raises(ValueError, match="оплат"):
+        call(**args)
+    assert len(calls) == 1
+    result = call(**args)
+    assert result["status"] == "order_submitted"
+    assert call(**args) == result
+    assert len(calls) == 2
+
+
+def test_server_error_keeps_status_uncertain_and_prevents_resubmission(checkout):
+    call, _, client = checkout
+    review = call(**review_arguments())
+    calls = []
+
+    def send(*_):
+        calls.append(True)
+        raise ValueError("Apteka API request failed (HTTP 500)")
+
+    client.send_order = send
+    args = dict(action="submit", confirmation_id=review["confirmation_id"], terms_accepted=True)
+    with pytest.raises(ValueError, match="500"):
+        call(**args)
+    with pytest.raises(ValueError, match="status"):
+        call(**args)
+    assert len(calls) == 1
 
 
 def test_courier_review_has_selected_destination_and_shipping(checkout):

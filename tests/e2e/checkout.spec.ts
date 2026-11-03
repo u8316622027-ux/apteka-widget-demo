@@ -28,6 +28,7 @@ async function loadWidget(page: Page, failure = "") {
         image_url: "",
       };
       let items: Record<string, unknown>[] = [];
+      let submissionAttempts = 0;
       const cart = () => ({
         cart_session_id: "session-test",
         items,
@@ -90,6 +91,18 @@ async function loadWidget(page: Page, failure = "") {
             if (name === "my_cart") return { structuredContent: cart() };
             if (name === "checkout_order") {
               if (args.action === "submit") {
+                submissionAttempts += 1;
+                if (failure === "validation" && submissionAttempts === 1)
+                  return {
+                    isError: true,
+                    structuredContent: {
+                      error: {
+                        type: "validation_error",
+                        message:
+                          "Заказ не принят (HTTP 422). Проверьте: способ оплаты.",
+                      },
+                    },
+                  };
                 if (failure === "submit")
                   return {
                     isError: true,
@@ -408,6 +421,36 @@ test("failed submission keeps the review and cart", async ({ page }) => {
   );
   await expect(page.locator('[data-checkout-step="success"]')).toBeHidden();
   await expect(page.locator("#products-cart-count")).toHaveText("1");
+});
+
+test("validation rejection keeps the cart and allows an explicit corrected submission", async ({
+  page,
+}) => {
+  await loadWidget(page, "validation");
+  await openCheckout(page);
+  await fillContact(page);
+  await page.locator('[data-checkout-action="next"]').click();
+  await expect(page.locator('[data-checkout-step="review"]')).toBeVisible();
+  await page.locator("#products-checkout-flow-consent").check();
+  await page.locator("#products-checkout-flow-submit").click();
+  await expect(page.locator("#products-checkout-flow-status")).toContainText(
+    "способ оплаты",
+  );
+  await expect(page.locator("#products-cart-count")).toHaveText("1");
+  const count = await page.evaluate(
+    () =>
+      (
+        globalThis as unknown as {
+          __calls: { args: Record<string, unknown> }[];
+        }
+      ).__calls.filter((call) => call.args.action === "submit").length,
+  );
+  expect(count).toBe(1);
+  await page
+    .locator('input[name="products-payment-method"][value="card"]')
+    .check();
+  await page.locator("#products-checkout-flow-submit").click();
+  await expect(page.locator('[data-checkout-step="success"]')).toBeVisible();
 });
 
 test("remove, decrease, theme, language and support buttons work", async ({

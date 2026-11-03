@@ -3,11 +3,13 @@
 import io
 import json
 from decimal import Decimal
+from urllib.error import HTTPError
 
 import pytest
 
 from app.domain.cart.entities import CartToken
 from app.interfaces.mcp import server
+from app.interfaces.mcp.tools import checkout_api
 from app.interfaces.mcp.tools.cart.mappers import map_cart_snapshot
 from app.interfaces.mcp.tools.cart.repository import AptekaCartRepository
 from app.interfaces.mcp.tools.checkout_api import AptekaCheckoutClient
@@ -119,6 +121,33 @@ def test_http_success_without_order_id_is_not_a_success(monkeypatch):
     client = AptekaCheckoutClient(opener=lambda *_, **__: io.BytesIO(b'{"errors":[]}'))
     with pytest.raises(ValueError, match="order id"):
         client.send_order(CartToken("secret", "Bearer"), {}, "ru")
+
+
+def test_order_validation_error_exposes_field_names_without_raw_personal_data(monkeypatch):
+    monkeypatch.setenv("APTEKA_BASE_URL", "https://stage.apteka.md")
+    body = json.dumps(
+        {
+            "message": "private-token",
+            "errors": {
+                "payment.type": ["Unsupported card_on_receipt"],
+                "delivery.phone": ["private-phone-and-email"],
+            },
+            "debug": "secret",
+        }
+    ).encode()
+
+    def opener(request, **_):
+        raise HTTPError(request.full_url, 422, "Unprocessable Entity", {}, io.BytesIO(body))
+
+    client = AptekaCheckoutClient(opener=opener)
+    with pytest.raises(checkout_api.OrderValidationError) as raised:
+        client.send_order(CartToken("secret", "Bearer"), {}, "ru")
+    assert raised.value.status_code == 422
+    assert raised.value.fields == ("payment.type", "delivery.phone")
+    assert "оплат" in str(raised.value)
+    assert "телефон" in str(raised.value)
+    assert "private" not in str(raised.value)
+    assert "secret" not in str(raised.value)
 
 
 @pytest.mark.parametrize(

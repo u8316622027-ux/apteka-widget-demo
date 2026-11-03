@@ -11,6 +11,40 @@ from app.domain.cart.entities import CartToken
 from app.interfaces.mcp.tools.apteka_urls import build_front_url
 
 
+class OrderValidationError(ValueError):
+    """An explicit HTTP 422 rejection; the order was not accepted."""
+
+    status_code = 422
+    _FIELD_LABELS = {
+        "payment.type": ("способ оплаты", "metoda de plată"),
+        "delivery.phone": ("телефон", "telefonul"),
+        "delivery.firstName": ("имя", "prenumele"),
+        "delivery.lastName": ("фамилия", "numele"),
+        "delivery.email": ("email", "emailul"),
+        "delivery.pharmacy_id": ("аптека", "farmacia"),
+        "delivery.address.street": ("улица", "strada"),
+        "delivery.address.building": ("номер дома", "numărul casei"),
+        "delivery.address.region_id": ("регион", "regiunea"),
+        "delivery.address.sector_id": ("населённый пункт", "localitatea"),
+        "delivery.deliveryWindow": ("время доставки", "intervalul de livrare"),
+        "dontCallMe": ("настройка звонка", "preferința pentru apel"),
+        "items": ("корзина", "coșul"),
+    }
+
+    def __init__(self, fields=(), *, language="ru"):
+        # Only known field names leave the HTTP boundary, never raw upstream bodies.
+        self.fields = tuple(field for field in fields if field in self._FIELD_LABELS)
+        romanian = str(language).startswith("ro")
+        labels = [self._FIELD_LABELS[field][int(romanian)] for field in self.fields]
+        details = ", ".join(labels) or ("datele comenzii" if romanian else "данные заказа")
+        prefix = (
+            "Comanda nu a fost acceptată (HTTP 422). Verificați"
+            if romanian
+            else ("Заказ не принят (HTTP 422). Проверьте")
+        )
+        super().__init__(f"{prefix}: {details}.")
+
+
 class AptekaCheckoutClient:
     def __init__(self, *, opener=urlopen, timeout: float = 15):
         self._opener = opener
@@ -34,6 +68,15 @@ class AptekaCheckoutClient:
             with self._opener(request, timeout=self._timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
+            if exc.code == 422 and path == "/order/confirm-order-by-using-mobile":
+                try:
+                    rejection = json.loads(exc.read(65536).decode("utf-8", errors="replace"))
+                except (ValueError, OSError):
+                    rejection = {}
+                fields = rejection.get("errors") if isinstance(rejection, dict) else {}
+                raise OrderValidationError(
+                    fields.keys() if isinstance(fields, dict) else (), language=language
+                ) from exc
             # Avoid reflecting upstream bodies containing personal data or credentials.
             raise ValueError(f"Apteka API request failed (HTTP {exc.code})") from exc
 
