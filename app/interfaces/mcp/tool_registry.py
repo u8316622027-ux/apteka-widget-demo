@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from app.core.config import get_settings
+from app.interfaces.mcp.action_registry import create_action_registry
+from app.interfaces.mcp.tool_definition import ToolDefinition
 from app.interfaces.mcp.tools.apteka_urls import get_apteka_base_url, get_apteka_media_base_url
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.checkout_tools import checkout_order
@@ -13,23 +14,7 @@ from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
 
 # Change this version when the widget bundle changes to invalidate host UI caches.
-PRODUCTS_WIDGET_TEMPLATE = "ui://widget/products.html?v=kokiko-2"
-
-
-@dataclass(frozen=True, slots=True)
-class ToolDefinition:
-    """Metadata and callable for an MCP tool."""
-
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-    handler: Callable[[dict[str, Any]], dict[str, Any]]
-    output_template: str
-    ui: dict[str, Any]
-    title: str | None = None
-    annotations: dict[str, Any] = field(default_factory=dict)
-    tool_invocation: dict[str, str] = field(default_factory=dict)
-    visibility: str = "public"
+PRODUCTS_WIDGET_TEMPLATE = "ui://widget/products.html?v=kokiko-3"
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
@@ -41,7 +26,7 @@ def create_tool_registry() -> dict[str, ToolDefinition]:
             name="search_products",
             title="Search products",
             description=(
-                "Search products by free-text query via Stage API. "
+                "Search the Apteka catalog by free-text query. "
                 "Args: query and optional limit. "
                 "Returns structuredContent.products and structuredContent.no_results when empty."
             ),
@@ -113,11 +98,12 @@ def _commerce_tools(ui):
         (
             "my_cart",
             "My cart",
-            "Show the current user's cart. Always reuse cart_session_id when available.",
+            "Compatibility session initializer and cart reader for older widgets. "
+            "May create a backend cart when needed. Use check_cart for read-only access.",
             {"cart_session_id": session},
             [],
             lambda args: my_cart(**args),
-            True,
+            False,
             False,
         ),
         (
@@ -218,7 +204,7 @@ def _commerce_tools(ui):
             True,
         ),
     ]
-    return {
+    legacy = {
         name: ToolDefinition(
             name=name,
             title=title,
@@ -238,6 +224,7 @@ def _commerce_tools(ui):
                 "destructiveHint": destructive,
             },
             tool_invocation={"invoking": "Loading…", "invoked": "Done."},
+            visibility="app",
         )
         for (
             name,
@@ -250,6 +237,10 @@ def _commerce_tools(ui):
             destructive,
         ) in definitions
     }
+    actions = create_action_registry(
+        ui, PRODUCTS_WIDGET_TEMPLATE, legacy["checkout_order"].input_schema["properties"]
+    )
+    return {**actions, **legacy}
 
 
 def serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
@@ -268,7 +259,7 @@ def serialize_tool_definition(tool: ToolDefinition) -> dict[str, Any]:
         "inputSchema": tool.input_schema,
         "ui": tool.ui,
         "_meta": {
-            "ui": {"visibility": ["model", "app"]},
+            "ui": {"visibility": ["app"] if tool.visibility == "app" else ["model", "app"]},
             "openai/widgetAccessible": True,
             "openai/widgetDomain": ui_domain,
             "openai/widgetCSP": {
@@ -310,7 +301,12 @@ def decorate_tool_result(
             "open": {
                 "template": tool.output_template,
                 "replace_previous": True,
-                "page": _resolve_widget_page(tool_name),
+                "page": (
+                    "search"
+                    if tool_name == "search_and_add_to_cart"
+                    and payload.get("status") != "cart_updated"
+                    else _resolve_widget_page(tool_name)
+                ),
             },
             "ui": tool.ui,
         }
@@ -318,9 +314,25 @@ def decorate_tool_result(
 
 
 def _resolve_widget_page(tool_name: str) -> str:
-    if tool_name in {"my_cart", "add_to_my_cart"}:
+    if tool_name in {
+        "my_cart",
+        "add_to_my_cart",
+        "check_cart",
+        "add_to_cart",
+        "update_cart_item",
+        "clear_cart",
+        "sync_cart",
+        "search_and_add_to_cart",
+    }:
         return "cart"
-    if tool_name == "checkout_order":
+    if tool_name in {
+        "checkout_order",
+        "open_checkout",
+        "get_checkout_options",
+        "get_delivery_windows",
+        "review_order",
+        "submit_order",
+    }:
         return "checkout"
     if tool_name == "search_products":
         return "search"

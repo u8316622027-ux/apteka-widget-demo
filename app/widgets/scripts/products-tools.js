@@ -223,6 +223,15 @@
       if (!candidate || typeof candidate !== "object") {
         return false;
       }
+      if (
+        ["set_widget_theme", "set_widget_language"].includes(candidate.action)
+      ) {
+        const language = normalizeLanguage(candidate.language);
+        if (language) ctx.actions.setLanguage(language);
+        theme?.updateFromPayload(candidate);
+        state.loadedOnce = true;
+        return true;
+      }
       const payload = ctx.api.hydrate(candidate);
       if (normalizeText(payload.api_base_url)) {
         state.apiBaseUrl = normalizeText(payload.api_base_url);
@@ -256,12 +265,21 @@
         state.lastQuery = query;
       }
       if (
-        cartApplied &&
+        (cartApplied || payload.action === "open_checkout") &&
         (requestedPage === "cart" || requestedPage === "checkout")
       ) {
         state.loadedOnce = true;
-        window.setTimeout(() => {
+        window.setTimeout(async () => {
           if (requestedPage === "checkout") {
+            if (payload.action === "open_checkout") {
+              try {
+                applyCartPayload(await ctx.api.cart("sync_cart"));
+              } catch (error) {
+                debugLog("checkout_cart_load_failed", {
+                  message: String(error),
+                });
+              }
+            }
             ctx.actions.openCart();
             ctx.actions.openCheckout();
             const checkoutStep = extractCheckoutStep(payload);

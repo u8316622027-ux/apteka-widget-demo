@@ -29,6 +29,7 @@ __all__ = [
     "UpstashRestCartTokenStore",
     "add_to_my_cart",
     "my_cart",
+    "check_cart",
     "_build_default_token_store",
     "_clear_default_token_store",
 ]
@@ -44,6 +45,18 @@ def my_cart(
 
     service = _build_cart_service(repository=repository, token_store=token_store)
     return service.my_cart(normalize_cart_session_id(cart_session_id))
+
+
+def check_cart(
+    *,
+    cart_session_id: str | None = None,
+    repository: CartApiRepository | None = None,
+    token_store: CartTokenStore | None = None,
+) -> dict[str, object]:
+    """Read a snapshot without creating or renewing a backend cart."""
+    return _build_cart_service(repository=repository, token_store=token_store).check_cart(
+        normalize_cart_session_id(cart_session_id)
+    )
 
 
 def add_to_my_cart(

@@ -56,6 +56,15 @@ async function loadWidget(page: Page, failure = "") {
               name,
               args,
             });
+            const legacyNames = ["my_cart", "add_to_my_cart", "checkout_order"];
+            if (failure !== "legacy_tools" && legacyNames.includes(name))
+              throw new Error(`Unexpected legacy tool ${name}`);
+            if (
+              failure === "legacy_tools" &&
+              !legacyNames.includes(name) &&
+              name !== "search_products"
+            )
+              throw new Error(`Tool not found: ${name}`);
             if (name === "search_products")
               return {
                 structuredContent: {
@@ -64,13 +73,28 @@ async function loadWidget(page: Page, failure = "") {
                   query: args.query,
                 },
               };
-            if (name === "add_to_my_cart") {
+            if (
+              ["add_to_cart", "update_cart_item", "add_to_my_cart"].includes(
+                name,
+              )
+            ) {
               if (failure === "cart")
                 return {
                   isError: true,
                   content: [{ type: "text", text: "Cart unavailable" }],
                 };
-              if (Array.isArray(args.items))
+              if (name === "update_cart_item")
+                items =
+                  Number(args.quantity) > 0
+                    ? [
+                        {
+                          ...product,
+                          product_id: args.product_id,
+                          quantity: args.quantity,
+                        },
+                      ]
+                    : [];
+              else if (Array.isArray(args.items))
                 items = args.items
                   .filter((i) => Number(i.quantity) > 0)
                   .map((i) => ({
@@ -88,9 +112,19 @@ async function loadWidget(page: Page, failure = "") {
                 ];
               return { structuredContent: cart() };
             }
-            if (name === "my_cart") return { structuredContent: cart() };
-            if (name === "checkout_order") {
-              if (args.action === "submit") {
+            if (["my_cart", "sync_cart", "check_cart"].includes(name))
+              return { structuredContent: cart() };
+            const checkoutAction =
+              (
+                {
+                  get_checkout_options: "options",
+                  get_delivery_windows: "delivery",
+                  review_order: "review",
+                  submit_order: "submit",
+                } as Record<string, string>
+              )[name] || (name === "checkout_order" ? args.action : "");
+            if (checkoutAction) {
+              if (checkoutAction === "submit") {
                 submissionAttempts += 1;
                 if (failure === "validation" && submissionAttempts === 1)
                   return {
@@ -116,14 +150,14 @@ async function loadWidget(page: Page, failure = "") {
                   },
                 };
               }
-              if (args.action === "delivery")
+              if (checkoutAction === "delivery")
                 return {
                   structuredContent: {
                     status: "delivery_windows",
                     windows: [slot],
                   },
                 };
-              if (args.action === "review") {
+              if (checkoutAction === "review") {
                 if (failure === "review")
                   return {
                     isError: true,
@@ -300,15 +334,20 @@ for (const width of [320, 768, 1280]) {
           }
         ).__calls,
     );
-    expect(calls.filter((call) => call.args.action === "submit")).toHaveLength(
+    expect(calls.filter((call) => call.name === "submit_order")).toHaveLength(
       1,
     );
     expect(
       calls.every((call) =>
         [
-          "my_cart",
-          "add_to_my_cart",
-          "checkout_order",
+          "sync_cart",
+          "check_cart",
+          "add_to_cart",
+          "update_cart_item",
+          "get_checkout_options",
+          "get_delivery_windows",
+          "review_order",
+          "submit_order",
           "search_products",
         ].includes(call.name),
       ),
@@ -359,17 +398,17 @@ test("courier validates address and payment changes update the confirmed order",
     () =>
       (
         globalThis as unknown as {
-          __calls: { args: Record<string, unknown> }[];
+          __calls: { name: string; args: Record<string, unknown> }[];
         }
       ).__calls,
   );
-  const reviews = calls.filter((call) => call.args.action === "review");
+  const reviews = calls.filter((call) => call.name === "review_order");
   expect(reviews.at(-1)?.args.payment_method).toBe("card_on_receipt");
   expect(reviews.at(-1)?.args.address).toEqual(
     expect.objectContaining({ street: "Dacia", house_number: "10" }),
   );
   expect(
-    calls.find((call) => call.args.action === "submit")?.args.confirmation_id,
+    calls.find((call) => call.name === "submit_order")?.args.confirmation_id,
   ).toBe("review-card_on_receipt");
 });
 
@@ -441,9 +480,9 @@ test("validation rejection keeps the cart and allows an explicit corrected submi
     () =>
       (
         globalThis as unknown as {
-          __calls: { args: Record<string, unknown> }[];
+          __calls: { name: string; args: Record<string, unknown> }[];
         }
-      ).__calls.filter((call) => call.args.action === "submit").length,
+      ).__calls.filter((call) => call.name === "submit_order").length,
   );
   expect(count).toBe(1);
   await page
@@ -526,12 +565,10 @@ test("rapid additions share one server session and keep the final quantity", asy
         }
       ).__calls,
   );
-  expect(calls.filter((call) => call.name === "add_to_my_cart")).toHaveLength(
-    3,
-  );
+  expect(calls.filter((call) => call.name === "add_to_cart")).toHaveLength(3);
   expect(
     calls
-      .filter((call) => call.name === "add_to_my_cart")
+      .filter((call) => call.name === "add_to_cart")
       .every((call) => call.args.cart_session_id === "session-test"),
   ).toBeTruthy();
 });
@@ -643,4 +680,78 @@ test("a chat review restores contact and delivery before confirmation", async ({
   await expect(page.locator("#products-checkout-flow-pharmacy")).toHaveValue(
     "1",
   );
+});
+
+test("chat can open checkout without supplying browser cart contents", async ({
+  page,
+}) => {
+  await loadWidget(page);
+  await page.locator('[data-action="add-to-cart"]').click();
+  await expect(page.locator("#products-cart-count")).toHaveText("1");
+  await page.evaluate(() =>
+    globalThis.dispatchEvent(
+      new CustomEvent("openai:set_globals", {
+        detail: {
+          globals: {
+            toolOutput: {
+              status: "ok",
+              action: "open_checkout",
+              cart_session_id: "session-test",
+              checkout_step: "delivery",
+              widget: { open: { page: "checkout" } },
+            },
+          },
+        },
+      }),
+    ),
+  );
+  await expect(page.locator('[data-checkout-step="delivery"]')).toBeVisible();
+  await page
+    .locator(
+      '#products-checkout-flow input[name="products-delivery-method"][value="pickup"]',
+    )
+    .check();
+  await page.locator('[data-checkout-action="next"]').click();
+  await fillContact(page);
+});
+
+test("chat preferences keep the visible products and cart", async ({
+  page,
+}) => {
+  await loadWidget(page);
+  await page.locator('[data-action="add-to-cart"]').click();
+  await expect(page.locator("#products-cart-count")).toHaveText("1");
+  for (const output of [
+    { action: "set_widget_theme", theme: "dark", theme_mode: "manual" },
+    { action: "set_widget_language", language: "ro" },
+  ]) {
+    await page.evaluate(
+      (toolOutput) =>
+        globalThis.dispatchEvent(
+          new CustomEvent("openai:set_globals", {
+            detail: { globals: { toolOutput } },
+          }),
+        ),
+      output,
+    );
+  }
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ro");
+  expect(
+    await page.evaluate(() => localStorage.getItem("apteka_widget_language")),
+  ).toBe("ro");
+  await expect(page.locator('[data-action="add-to-cart"]')).toBeVisible();
+  await expect(page.locator("#products-cart-count")).toHaveText("1");
+});
+
+test("approved legacy tools remain usable while new definitions are reviewed", async ({
+  page,
+}) => {
+  await loadWidget(page, "legacy_tools");
+  await openCheckout(page);
+  await fillContact(page);
+  await page.locator('[data-checkout-action="next"]').click();
+  await page.locator("#products-checkout-flow-consent").check();
+  await page.locator("#products-checkout-flow-submit").click();
+  await expect(page.locator('[data-checkout-step="success"]')).toBeVisible();
 });

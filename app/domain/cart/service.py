@@ -43,6 +43,43 @@ class CartService:
         snapshot = self._repository.get_cart(token)
         return self._response_payload(session_id, created, snapshot)
 
+    def check_cart(self, cart_session_id: str | None = None) -> dict[str, object]:
+        """Read an existing cart without creating or renewing a backend session."""
+        session_id = (cart_session_id or "").strip()
+        token = self._token_store.get_token(session_id) if session_id else None
+        if token is None:
+            result = self._response_payload(session_id, False, CartSnapshot([], 0, Decimal(0)))
+            result["session_expired"] = bool(session_id)
+            return result
+        return self._response_payload(session_id, False, self._repository.get_cart(token))
+
+    def clear_cart(self, cart_session_id: str | None = None) -> dict[str, object]:
+        session_id = (cart_session_id or "").strip()
+        with _session_update_lock(session_id):
+            token = self._token_store.get_token(session_id) if session_id else None
+            if token is None:
+                return self.check_cart(session_id)
+            snapshot = self._repository.update_items(token, items=[])
+            return self._response_payload(session_id, False, snapshot)
+
+    def update_cart_item(
+        self, cart_session_id: str, product_id: str, quantity: int
+    ) -> dict[str, object]:
+        """Set an existing line quantity under the same lock used by checkout."""
+        with _session_update_lock(cart_session_id):
+            token = self._token_store.get_token(cart_session_id)
+            if token is None:
+                raise ValueError("Cart session expired; reopen the cart")
+            current = self._repository.get_cart(token)
+            if not any(item.product_id == product_id for item in current.items):
+                raise ValueError("Product is not in this cart; use add_to_cart first")
+            snapshot = self._update_cart_with_merge(
+                token,
+                [(product_id, quantity)],
+                current_snapshot=current,
+            )
+            return self._response_payload(cart_session_id, False, snapshot)
+
     def add_to_cart(
         self,
         *,

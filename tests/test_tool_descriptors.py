@@ -12,7 +12,7 @@ def test_tool_descriptor_includes_ui_meta_for_widget() -> None:
     registry = tool_registry.create_tool_registry()
     payload = tool_registry.serialize_tool_definition(registry["search_products"])
 
-    assert payload["outputTemplate"] == "ui://widget/products.html?v=kokiko-2"
+    assert payload["outputTemplate"] == "ui://widget/products.html?v=kokiko-3"
     assert payload["_meta"]["openai/outputTemplate"] == payload["outputTemplate"]
     assert payload["_meta"]["ui"]["resourceUri"] == payload["outputTemplate"]
     assert payload["_meta"]["openai/widgetDomain"]
@@ -23,6 +23,7 @@ def test_tool_descriptor_includes_ui_meta_for_widget() -> None:
 @pytest.mark.parametrize(
     "uri",
     [
+        "ui://widget/products.html?v=kokiko-3",
         "ui://widget/products.html?v=kokiko-2",
         "ui://widget/products.html",
     ],
@@ -48,7 +49,7 @@ def test_versioned_resource_and_old_connection_both_serve_current_modal(uri):
 def test_all_widget_tools_use_the_same_versioned_template():
     registry = tool_registry.create_tool_registry()
     assert {tool.output_template for tool in registry.values() if tool.output_template} == {
-        "ui://widget/products.html?v=kokiko-2"
+        "ui://widget/products.html?v=kokiko-3"
     }
 
 
@@ -77,9 +78,10 @@ def test_tool_descriptor_readonly_annotations() -> None:
     }
 
 
-def test_theme_tool_is_removed() -> None:
+def test_theme_and_language_can_be_controlled_from_chat() -> None:
     registry = tool_registry.create_tool_registry()
-    assert "set_widget_theme" not in registry
+    assert "set_widget_theme" in registry
+    assert "set_widget_language" in registry
 
 
 @pytest.mark.parametrize("api_base", ["https://api.apteka.md", "https://stage.apteka.md"])

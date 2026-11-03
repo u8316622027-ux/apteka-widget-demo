@@ -488,6 +488,8 @@ def _widget_resource_index() -> dict[str, dict[str, Any]]:
         )
         # Existing connections may still request the previously advertised URI.
         mapping.setdefault(unversioned_uri, mapping[uri])
+        if unversioned_uri == "ui://widget/products.html":
+            mapping.setdefault(f"{unversioned_uri}?v=kokiko-2", mapping[uri])
     return mapping
 
 

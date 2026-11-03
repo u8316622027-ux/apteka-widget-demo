@@ -17,7 +17,7 @@ from app.domain.checkout.service import CheckoutValidationService
 from app.interfaces.mcp.tools.cart_tools import (
     AptekaCartRepository,
     _build_default_token_store,
-    my_cart,
+    check_cart,
 )
 from app.interfaces.mcp.tools.checkout_api import AptekaCheckoutClient, OrderValidationError
 
@@ -64,7 +64,7 @@ def checkout_order(arguments, *, repository=None, token_store=None, client=None)
     language = "ro" if str(arguments.get("language", "ru")).startswith("ro") else "ru"
     if action == "submit":
         return _submit(arguments, session_id, token, repo, store, api)
-    cart = my_cart(cart_session_id=session_id, repository=repo, token_store=store)
+    cart = check_cart(cart_session_id=session_id, repository=repo, token_store=store)
     if not cart["items"]:
         return {"status": "cart_empty", "cart_session_id": session_id, "cart": cart}
     references = api.reference_data(language)
@@ -246,7 +246,7 @@ def _submit(args, session_id, token, repo, store, api):
             return review["result"]
         if review["state"] != "review":
             raise ValueError("Order status is uncertain; contact support before trying again")
-        cart = my_cart(cart_session_id=session_id, repository=repo, token_store=store)
+        cart = check_cart(cart_session_id=session_id, repository=repo, token_store=store)
         if _fingerprint(cart) != review["fingerprint"]:
             raise ValueError("The cart has changed; review the order again")
         review["state"] = "submitting"

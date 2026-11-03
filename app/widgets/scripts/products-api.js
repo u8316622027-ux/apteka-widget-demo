@@ -4,6 +4,7 @@
     let sessionId = window.openai?.widgetState?.cartSessionId || "";
     let queue = Promise.resolve();
     let inFlight = 0;
+    const unavailableTools = new Set();
     const references = new Map();
     try {
       sessionId ||= localStorage.getItem("apteka_cart_session_id") || "";
@@ -33,6 +34,11 @@
           ...(sessionId ? { cart_session_id: sessionId } : {}),
           ...args,
         });
+        const rpcError = result?.error;
+        if (rpcError)
+          throw Object.assign(new Error(rpcError.message), {
+            code: rpcError.code,
+          });
         const payload =
           result?.structuredContent ||
           result?.result?.structuredContent ||
@@ -47,6 +53,24 @@
         return payload;
       } finally {
         inFlight -= 1;
+      }
+    };
+    // Only a definitive tool-discovery failure permits the compatibility call.
+    // Network errors and business errors must never retry a real transaction.
+    const preferred = async (name, args, legacyName, legacyArgs = args) => {
+      if (unavailableTools.has(name)) return call(legacyName, legacyArgs);
+      try {
+        return await call(name, args);
+      } catch (error) {
+        if (
+          error?.code !== -32601 &&
+          !/^(?:unknown tool|tool not found|tool unavailable)\b/i.test(
+            error?.message || "",
+          )
+        )
+          throw error;
+        unavailableTools.add(name);
+        return call(legacyName, legacyArgs);
       }
     };
     const cartPayload = (payload) => {
@@ -75,21 +99,43 @@
     };
     const cart = (name, args = {}) => {
       const task = queue.then(async () => {
-        if (name === "sync_cart") return cartPayload(await call("my_cart"));
+        if (name === "sync_cart")
+          return cartPayload(
+            await preferred(
+              sessionId ? "check_cart" : "sync_cart",
+              {},
+              "my_cart",
+            ),
+          );
         state.checkoutConfirmationId = "";
         if (name === "add_to_cart")
           return cartPayload(
-            await call("add_to_my_cart", {
-              product_id: String(args.product.id),
-              quantity: 1,
-            }),
+            await preferred(
+              "add_to_cart",
+              {
+                product_id: String(args.product.id),
+                quantity: 1,
+              },
+              "add_to_my_cart",
+            ),
           );
         return cartPayload(
-          await call("add_to_my_cart", {
-            items: [
-              { product_id: String(args.product_id), quantity: args.quantity },
-            ],
-          }),
+          await preferred(
+            "update_cart_item",
+            {
+              product_id: String(args.product_id),
+              quantity: args.quantity,
+            },
+            "add_to_my_cart",
+            {
+              items: [
+                {
+                  product_id: String(args.product_id),
+                  quantity: args.quantity,
+                },
+              ],
+            },
+          ),
         );
       });
       queue = task.catch(() => {});
@@ -99,7 +145,12 @@
       await queue;
       const language = utils.getActiveLanguage();
       if (!references.has(language)) {
-        const task = call("checkout_order", { action: "options", language });
+        const task = preferred(
+          "get_checkout_options",
+          { language },
+          "checkout_order",
+          { action: "options", language },
+        );
         references.set(language, task);
         task.catch(() => references.delete(language));
       }
@@ -153,12 +204,17 @@
       }
       const pickup = path.includes("/pick-up/");
       const destination = Number(path.split("/").at(-1));
-      const response = await call("checkout_order", {
-        action: "delivery",
+      const deliveryArgs = {
         language: utils.getActiveLanguage(),
         delivery_method: pickup ? "pickup" : "courier",
         ...(pickup ? { pharmacy_id: destination } : { region_id: destination }),
-      });
+      };
+      const response = await preferred(
+        "get_delivery_windows",
+        deliveryArgs,
+        "checkout_order",
+        { ...deliveryArgs, action: "delivery" },
+      );
       const groups = {};
       for (const slot of response.windows || []) {
         groups[slot.deliveryDate] ||= [];
@@ -173,7 +229,6 @@
       const [first_name, ...last] = payload.customer_name.trim().split(/\s+/);
       const slot = payload.delivery_window;
       return {
-        action: "review",
         language: payload.language,
         delivery_method: payload.delivery_method,
         region_id: payload.region_id,
@@ -212,7 +267,11 @@
     const review = async (payload) => {
       await queue;
       state.checkoutConfirmationId = "";
-      const result = await call("checkout_order", reviewArguments(payload));
+      const args = reviewArguments(payload);
+      const result = await preferred("review_order", args, "checkout_order", {
+        ...args,
+        action: "review",
+      });
       if (result.status !== "review")
         throw new Error("Не удалось проверить заказ. Обновите корзину.");
       state.checkoutConfirmationId = result.confirmation_id;
@@ -223,10 +282,13 @@
       await queue;
       if (!state.checkoutConfirmationId)
         throw new Error("Проверьте заказ перед отправкой.");
-      const result = await call("checkout_order", {
-        action: "submit",
+      const args = {
         confirmation_id: state.checkoutConfirmationId,
         terms_accepted: true,
+      };
+      const result = await preferred("submit_order", args, "checkout_order", {
+        ...args,
+        action: "submit",
       });
       if (result.status !== "order_submitted" || !result.order_id)
         throw new Error(
