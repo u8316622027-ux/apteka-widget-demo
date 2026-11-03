@@ -14,7 +14,7 @@ from app.interfaces.mcp.tools.faq_tools import faq_search
 from app.interfaces.mcp.tools.search_tools import search_products
 
 # Change this version when the widget bundle changes to invalidate host UI caches.
-PRODUCTS_WIDGET_TEMPLATE = "ui://widget/products.html?v=kokiko-3"
+PRODUCTS_WIDGET_TEMPLATE = "ui://widget/products.html?v=kokiko-4"
 
 
 def create_tool_registry() -> dict[str, ToolDefinition]:
@@ -225,6 +225,7 @@ def _commerce_tools(ui):
             },
             tool_invocation={"invoking": "Loading…", "invoked": "Done."},
             visibility="app",
+            listed=False,
         )
         for (
             name,

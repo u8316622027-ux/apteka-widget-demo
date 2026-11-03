@@ -28,9 +28,10 @@ async function loadWidget(page: Page, failure = "") {
         image_url: "",
       };
       let items: Record<string, unknown>[] = [];
+      let cartCreated = false;
       let submissionAttempts = 0;
       const cart = () => ({
-        cart_session_id: "session-test",
+        cart_session_id: cartCreated ? "session-test" : "",
         items,
         count: items.reduce((n, i) => n + Number(i.quantity), 0),
         total: items.reduce((n, i) => n + 40 * Number(i.quantity), 0),
@@ -56,13 +57,17 @@ async function loadWidget(page: Page, failure = "") {
               name,
               args,
             });
-            const legacyNames = ["my_cart", "add_to_my_cart", "checkout_order"];
-            if (failure !== "legacy_tools" && legacyNames.includes(name))
+            const legacyNames = [
+              "my_cart",
+              "add_to_my_cart",
+              "checkout_order",
+              "sync_cart",
+            ];
+            if (legacyNames.includes(name))
               throw new Error(`Unexpected legacy tool ${name}`);
             if (
-              failure === "legacy_tools" &&
-              !legacyNames.includes(name) &&
-              name !== "search_products"
+              (failure === "review_unavailable" && name === "review_order") ||
+              (failure === "submit_unavailable" && name === "submit_order")
             )
               throw new Error(`Tool not found: ${name}`);
             if (name === "search_products")
@@ -78,6 +83,7 @@ async function loadWidget(page: Page, failure = "") {
                 name,
               )
             ) {
+              cartCreated = true;
               if (failure === "cart")
                 return {
                   isError: true,
@@ -340,7 +346,6 @@ for (const width of [320, 768, 1280]) {
     expect(
       calls.every((call) =>
         [
-          "sync_cart",
           "check_cart",
           "add_to_cart",
           "update_cart_item",
@@ -566,9 +571,11 @@ test("rapid additions share one server session and keep the final quantity", asy
       ).__calls,
   );
   expect(calls.filter((call) => call.name === "add_to_cart")).toHaveLength(3);
+  const additions = calls.filter((call) => call.name === "add_to_cart");
+  expect(additions[0].args.cart_session_id).toBeUndefined();
   expect(
-    calls
-      .filter((call) => call.name === "add_to_cart")
+    additions
+      .slice(1)
       .every((call) => call.args.cart_session_id === "session-test"),
   ).toBeTruthy();
 });
@@ -744,14 +751,56 @@ test("chat preferences keep the visible products and cart", async ({
   await expect(page.locator("#products-cart-count")).toHaveText("1");
 });
 
-test("approved legacy tools remain usable while new definitions are reviewed", async ({
+test("initial cart loading only reads and never creates an empty backend cart", async ({
   page,
 }) => {
-  await loadWidget(page, "legacy_tools");
-  await openCheckout(page);
-  await fillContact(page);
-  await page.locator('[data-checkout-action="next"]').click();
-  await page.locator("#products-checkout-flow-consent").check();
-  await page.locator("#products-checkout-flow-submit").click();
-  await expect(page.locator('[data-checkout-step="success"]')).toBeVisible();
+  await loadWidget(page);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (globalThis as unknown as { __calls: { name: string }[] }).__calls.map(
+          (call) => call.name,
+        ),
+      ),
+    )
+    .toContain("check_cart");
+  const calls = await page.evaluate(
+    () => (globalThis as unknown as { __calls: { name: string }[] }).__calls,
+  );
+  expect(calls.every((call) => call.name === "check_cart")).toBeTruthy();
+  await expect(page.locator("#products-cart-count")).toHaveText("0");
 });
+
+for (const operation of ["review", "submit"]) {
+  test(`unavailable ${operation} never falls back to an obsolete checkout tool`, async ({
+    page,
+  }) => {
+    await loadWidget(page, `${operation}_unavailable`);
+    await openCheckout(page);
+    await fillContact(page);
+    await page.locator('[data-checkout-action="next"]').click();
+    if (operation === "submit") {
+      await expect(page.locator('[data-checkout-step="review"]')).toBeVisible();
+      await page.locator("#products-checkout-flow-consent").check();
+      await page.locator("#products-checkout-flow-submit").click();
+    }
+    await expect(page.locator("#products-checkout-flow-status")).toContainText(
+      `Tool not found: ${operation}_order`,
+    );
+    await expect(page.locator('[data-checkout-step="success"]')).toBeHidden();
+    await expect(page.locator("#products-cart-count")).toHaveText("1");
+    const calls = await page.evaluate(
+      () => (globalThis as unknown as { __calls: { name: string }[] }).__calls,
+    );
+    expect(
+      calls.filter((call) => call.name === `${operation}_order`),
+    ).toHaveLength(1);
+    expect(
+      calls.some((call) =>
+        ["my_cart", "add_to_my_cart", "checkout_order", "sync_cart"].includes(
+          call.name,
+        ),
+      ),
+    ).toBeFalsy();
+  });
+}

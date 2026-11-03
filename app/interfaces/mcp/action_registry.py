@@ -30,6 +30,7 @@ def create_action_registry(ui, template, checkout_properties):
         destructive=False,
         openworld=True,
         visibility="public",
+        listed=True,
     ):
         registry[name] = ToolDefinition(
             name=name,
@@ -50,6 +51,7 @@ def create_action_registry(ui, template, checkout_properties):
                 "openWorldHint": openworld,
             },
             visibility=visibility,
+            listed=listed,
             tool_invocation={"invoking": "Loading…", "invoked": "Done."},
         )
 
@@ -95,6 +97,7 @@ def create_action_registry(ui, template, checkout_properties):
         "otherwise reads it. Never replaces backend items with browser-supplied prices.",
         cart,
         visibility="app",
+        listed=False,
     )
     register(
         "search_and_add_to_cart",

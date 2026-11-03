@@ -16,3 +16,4 @@ class ToolDefinition:
     annotations: dict[str, Any] = field(default_factory=dict)
     tool_invocation: dict[str, str] = field(default_factory=dict)
     visibility: str = "public"
+    listed: bool = True

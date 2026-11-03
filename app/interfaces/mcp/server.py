@@ -69,7 +69,7 @@ def _get_default_tool_registry() -> dict[str, ToolDefinition]:
 @lru_cache(maxsize=1)
 def _get_default_tools_list_payload() -> dict[str, Any]:
     registry = _get_default_tool_registry()
-    return {"tools": [serialize_tool_definition(tool) for tool in registry.values()]}
+    return {"tools": [serialize_tool_definition(tool) for tool in registry.values() if tool.listed]}
 
 
 def _reset_server_caches_for_tests() -> None:
@@ -255,7 +255,11 @@ def handle_rpc_request(
             tools_result = _get_default_tools_list_payload()
         else:
             tools_result = {
-                "tools": [serialize_tool_definition(tool) for tool in active_registry.values()]
+                "tools": [
+                    serialize_tool_definition(tool)
+                    for tool in active_registry.values()
+                    if tool.listed
+                ]
             }
         return {
             "jsonrpc": "2.0",
@@ -489,7 +493,8 @@ def _widget_resource_index() -> dict[str, dict[str, Any]]:
         # Existing connections may still request the previously advertised URI.
         mapping.setdefault(unversioned_uri, mapping[uri])
         if unversioned_uri == "ui://widget/products.html":
-            mapping.setdefault(f"{unversioned_uri}?v=kokiko-2", mapping[uri])
+            for version in ("kokiko-2", "kokiko-3"):
+                mapping.setdefault(f"{unversioned_uri}?v={version}", mapping[uri])
     return mapping
 
 

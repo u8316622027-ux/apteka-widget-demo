@@ -53,7 +53,7 @@ def checkout_order(arguments, *, repository=None, token_store=None, client=None)
     """Options -> review -> submit; a server-held review binds the order to the cart."""
     session_id = str(arguments.get("cart_session_id") or "").strip()
     if not session_id:
-        raise ValueError("cart_session_id is required; open my_cart first")
+        raise ValueError("cart_session_id is required; use add_to_cart to create a cart first")
     store = token_store or _build_default_token_store()
     token = store.get_token(session_id)
     if token is None:

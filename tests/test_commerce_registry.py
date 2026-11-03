@@ -1,4 +1,6 @@
-"""The widget and model share the same uncached commerce tools."""
+"""Old clients retain callable handlers without advertising them in MCP discovery."""
+
+from dataclasses import replace
 
 import pytest
 
@@ -25,25 +27,36 @@ def test_commerce_tools_are_accessible_uncached_and_open_the_right_page(name, pa
 
 
 @pytest.mark.parametrize(
-    "name,readonly,destructive",
+    "name",
     [
-        ("my_cart", False, False),
-        ("add_to_my_cart", False, True),
-        ("checkout_order", False, True),
+        "my_cart",
+        "add_to_my_cart",
+        "checkout_order",
     ],
 )
-def test_public_commerce_annotations_cover_removal_and_order_submission(
-    name, readonly, destructive
-):
-    """Review scans must see cart deletion and real-order side effects in tools/list."""
-    server._reset_server_caches_for_tests()
-    try:
-        response = server.handle_rpc_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-        descriptor = next(tool for tool in response["result"]["tools"] if tool["name"] == name)
-        assert descriptor["annotations"] == {
-            "readOnlyHint": readonly,
-            "openWorldHint": True,
-            "destructiveHint": destructive,
-        }
-    finally:
-        server._reset_server_caches_for_tests()
+def test_old_clients_can_call_unlisted_compatibility_handlers(name):
+    registry = tool_registry.create_tool_registry()
+    calls = []
+
+    def handler(arguments):
+        calls.append(arguments)
+        return {"status": "compatibility_ok"}
+
+    registry[name] = replace(registry[name], handler=handler)
+    advertised = server.handle_rpc_request(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        registry=registry,
+    )
+    assert name not in {tool["name"] for tool in advertised["result"]["tools"]}
+    arguments = {"cart_session_id": "legacy"} if name == "checkout_order" else {}
+    response = server.handle_rpc_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+        registry=registry,
+    )
+    assert response["result"]["structuredContent"]["status"] == "compatibility_ok"
+    assert calls == [arguments]

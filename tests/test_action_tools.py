@@ -106,6 +106,38 @@ def test_legacy_tools_and_internal_session_sync_are_app_only():
         assert descriptor["_meta"]["ui"]["visibility"] == ["app"]
 
 
+@pytest.mark.parametrize("custom_registry", [False, True])
+def test_scan_advertises_only_current_actions(custom_registry):
+    expected = {
+        "search_products",
+        "support_knowledge_search",
+        "check_cart",
+        "add_to_cart",
+        "update_cart_item",
+        "clear_cart",
+        "search_and_add_to_cart",
+        "open_checkout",
+        "get_checkout_options",
+        "get_delivery_windows",
+        "review_order",
+        "submit_order",
+        "set_widget_theme",
+        "set_widget_language",
+    }
+    server._reset_server_caches_for_tests()
+    try:
+        options = {"registry": tool_registry.create_tool_registry()} if custom_registry else {}
+        response = server.handle_rpc_request(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            **options,
+        )
+        tools = response["result"]["tools"]
+        assert {tool["name"] for tool in tools} == expected
+        assert all(tool["_meta"]["ui"]["visibility"] == ["model", "app"] for tool in tools)
+    finally:
+        server._reset_server_caches_for_tests()
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -211,6 +243,11 @@ def test_checkout_preparation_never_submits_and_confirmation_stays_idempotent(
 def test_checkout_action_cannot_be_overridden(actions):
     with pytest.raises(ValueError, match="action"):
         actions.get_checkout_options({"action": "submit"})
+
+
+def test_checkout_without_a_cart_points_to_a_current_tool(actions):
+    with pytest.raises(ValueError, match="add_to_cart"):
+        actions.get_checkout_options({"cart_session_id": ""})
 
 
 def test_search_and_add_requires_selection_when_results_are_ambiguous(actions, cart_backend):
