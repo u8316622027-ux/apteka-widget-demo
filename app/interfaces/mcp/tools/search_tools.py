@@ -12,7 +12,11 @@ from urllib.request import urlopen as default_urlopen
 from app.domain.products.entities import ProductSummary
 from app.domain.products.repository import ProductSearchRepository
 from app.domain.products.service import ProductSearchService
-from app.interfaces.mcp.tools.apteka_urls import build_front_url, get_apteka_base_url
+from app.interfaces.mcp.tools.apteka_urls import (
+    build_front_url,
+    get_apteka_base_url,
+    resolve_apteka_image_url,
+)
 
 APTEKA_SEARCH_PATH = "/search"
 
@@ -159,7 +163,7 @@ def _map_product(item: dict[str, Any]) -> ProductSummary:
         except (TypeError, ValueError):
             discount_price = None
 
-    image_url = _extract_image_url(item)
+    image_url = resolve_apteka_image_url(_extract_image_url(item))
     product_url = item.get("url") or item.get("product_url") or item.get("productUrl")
     slug_ro = None
     slug_ru = None

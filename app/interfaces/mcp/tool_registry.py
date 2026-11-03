@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from app.core.config import get_settings
-from app.interfaces.mcp.tools.apteka_urls import get_apteka_base_url
+from app.interfaces.mcp.tools.apteka_urls import get_apteka_base_url, get_apteka_media_base_url
 from app.interfaces.mcp.tools.cart_tools import add_to_my_cart, my_cart
 from app.interfaces.mcp.tools.checkout_tools import checkout_order
 from app.interfaces.mcp.tools.faq_tools import faq_search
@@ -324,13 +324,14 @@ def _build_widget_ui_config() -> dict[str, Any]:
     resource_domains = [
         widget_domain,
         apteka_base_url,
+        get_apteka_media_base_url(),
         "https://www.apteka.md",
     ]
     return {
         "domain": widget_domain,
         "csp": {
             "connectDomains": [apteka_base_url],
-            "resourceDomains": resource_domains,
+            "resourceDomains": list(dict.fromkeys(resource_domains)),
         },
     }
 

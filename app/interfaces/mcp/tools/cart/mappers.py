@@ -6,6 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from app.domain.cart.entities import CartItem, CartSnapshot
+from app.interfaces.mcp.tools.apteka_urls import resolve_apteka_image_url
 
 
 def map_cart_snapshot(payload: Any) -> CartSnapshot:
@@ -154,7 +155,7 @@ def normalize_item_meta_payload(raw_payload: dict[str, object]) -> dict[str, obj
 def normalize_image_url(value: object) -> str | None:
     if not isinstance(value, str):
         return None
-    image_url = value.strip()
+    image_url = resolve_apteka_image_url(value.strip()) or ""
     if not image_url:
         return None
     lowered = image_url.lower()

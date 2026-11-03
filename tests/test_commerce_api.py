@@ -73,6 +73,26 @@ def test_zero_discount_uses_regular_price():
     assert cart.total == Decimal("80.00")
 
 
+def test_cart_photos_use_selected_media_host(monkeypatch):
+    monkeypatch.setenv("APTEKA_MEDIA_BASE_URL", "https://api.apteka.md")
+    cart = map_cart_snapshot(
+        {
+            "items": [
+                {
+                    "product_id": 1,
+                    "quantity": 1,
+                    "details": {
+                        "translations": {"ru": {"name": "Product"}},
+                        "price": 40,
+                        "images": [{"preview": "https://stage.apteka.md/media/1/preview.webp"}],
+                    },
+                }
+            ]
+        }
+    )
+    assert cart.items[0].image_url == "https://api.apteka.md/media/1/preview.webp"
+
+
 def test_checkout_submission_sends_bearer_and_real_payload(monkeypatch):
     monkeypatch.setenv("APTEKA_BASE_URL", "https://api.example")
     requests = []

@@ -4,10 +4,31 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from app.core.env import read_env_file_value
 
 ENV_FILE_PATH = Path(__file__).resolve().parents[4] / ".env"
+
+
+def get_apteka_media_base_url() -> str:
+    """Product media can stay on production while order APIs use stage."""
+    raw = str(os.getenv("APTEKA_MEDIA_BASE_URL", "")).strip()
+    if not raw:
+        raw = read_env_file_value("APTEKA_MEDIA_BASE_URL", env_path=ENV_FILE_PATH).strip()
+    return (raw or "https://api.apteka.md").rstrip("/")
+
+
+def resolve_apteka_image_url(value: str | None) -> str | None:
+    if not value:
+        return value
+    parsed = urlsplit(value)
+    apteka_host = parsed.hostname in {"stage.apteka.md", "api.apteka.md", "www.apteka.md"}
+    relative = not parsed.scheme and not parsed.netloc and value.startswith("/")
+    if (apteka_host or relative) and parsed.path.startswith(("/media/", "/assets/images/")):
+        media = urlsplit(get_apteka_media_base_url())
+        return urlunsplit((media.scheme, media.netloc, parsed.path, parsed.query, parsed.fragment))
+    return value
 
 
 def get_apteka_base_url() -> str:
