@@ -82,10 +82,13 @@ def test_theme_tool_is_removed() -> None:
     assert "set_widget_theme" not in registry
 
 
+@pytest.mark.parametrize("api_base", ["https://api.apteka.md", "https://stage.apteka.md"])
 def test_widget_ui_config_includes_resource_and_connect_domains(
     monkeypatch: pytest.MonkeyPatch,
+    api_base: str,
 ) -> None:
     monkeypatch.setenv("MCP_WIDGET_DOMAIN", "https://widgets.example")
+    monkeypatch.setenv("APTEKA_BASE_URL", api_base)
     mcp_server._reset_server_caches_for_tests()
 
     registry = tool_registry.create_tool_registry()
@@ -93,7 +96,8 @@ def test_widget_ui_config_includes_resource_and_connect_domains(
     csp = ui_config["csp"]
 
     assert "https://widgets.example" in csp["resourceDomains"]
-    assert "https://api.apteka.md" in csp["connectDomains"]
+    assert api_base in csp["connectDomains"]
+    assert api_base in csp["resourceDomains"]
     assert "https://cdn.jsdelivr.net" not in csp["resourceDomains"]
 
 

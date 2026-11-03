@@ -9,7 +9,34 @@ import pytest
 from app.domain.cart.entities import CartToken
 from app.interfaces.mcp import server
 from app.interfaces.mcp.tools.cart.mappers import map_cart_snapshot
+from app.interfaces.mcp.tools.cart.repository import AptekaCartRepository
 from app.interfaces.mcp.tools.checkout_api import AptekaCheckoutClient
+
+
+@pytest.mark.parametrize("api_base", ["https://stage.apteka.md", "https://api.apteka.md"])
+def test_cart_and_order_use_the_same_selected_environment(monkeypatch, api_base):
+    monkeypatch.setenv("APTEKA_BASE_URL", api_base)
+    requests = []
+
+    def opener(request, **_):
+        requests.append(request)
+        if request.full_url.endswith("/cart"):
+            if request.get_header("Authorization"):
+                return io.BytesIO(b'{"items":[],"amount_mdl":0}')
+            return io.BytesIO(b'{"accessToken":"environment-token","tokenType":"Bearer"}')
+        return io.BytesIO(b'{"id":123}')
+
+    cart = AptekaCartRepository(urlopen=opener)
+    token = cart.create_cart()
+    cart.get_cart(token)
+    AptekaCheckoutClient(opener=opener).send_order(token, {"delivery": {"type": "pick-up"}}, "ru")
+
+    assert [request.full_url for request in requests] == [
+        f"{api_base}/api/v1/front/cart",
+        f"{api_base}/api/v1/front/cart",
+        f"{api_base}/api/v1/front/order/confirm-order-by-using-mobile",
+    ]
+    assert requests[-1].get_header("Authorization") == "Bearer environment-token"
 
 
 def test_map_production_cart_details_and_server_total():
