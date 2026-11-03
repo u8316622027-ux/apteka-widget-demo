@@ -118,12 +118,15 @@ def _commerce_tools(ui):
             [],
             lambda args: my_cart(**args),
             True,
+            False,
         ),
         (
             "add_to_my_cart",
             "Update my cart",
             "Add one product by product_id (quantity is an increment). "
             "For changes or removal use items with absolute quantities; zero removes an item. "
+            "This can overwrite quantities or delete cart line items without an automatic undo. "
+            "It changes the cart only; it does not place an order or charge a payment. "
             "Always reuse cart_session_id. Product prices come from Apteka API.",
             {
                 "cart_session_id": session,
@@ -146,12 +149,16 @@ def _commerce_tools(ui):
             [],
             lambda args: add_to_my_cart(**args),
             False,
+            True,
         ),
         (
             "checkout_order",
             "Checkout order",
-            "Checkout the existing cart. options returns delivery choices. review validates "
-            "contact, destination and payment and returns confirmation_id plus totals. "
+            "Checkout the existing cart. options returns delivery choices; delivery returns "
+            "available delivery windows. review validates contact, destination and payment "
+            "and returns confirmation_id plus totals. submit sends contact and delivery details "
+            "to Apteka and creates a real order; this tool cannot cancel that order. "
+            "Payment is cash or card on receipt; this tool does not collect payment card details. "
             "Only call submit after the user explicitly approves that exact review and accepts "
             "the terms; pass confirmation_id and terms_accepted=true. Never invent contact "
             "details or retry an uncertain submission. Reuse cart_session_id.",
@@ -208,6 +215,7 @@ def _commerce_tools(ui):
             ["cart_session_id"],
             checkout_order,
             False,
+            True,
         ),
     ]
     return {
@@ -224,10 +232,23 @@ def _commerce_tools(ui):
             handler=handler,
             output_template=PRODUCTS_WIDGET_TEMPLATE,
             ui=ui,
-            annotations={"readOnlyHint": readonly, "openWorldHint": True, "destructiveHint": False},
+            annotations={
+                "readOnlyHint": readonly,
+                "openWorldHint": True,
+                "destructiveHint": destructive,
+            },
             tool_invocation={"invoking": "Loading…", "invoked": "Done."},
         )
-        for name, title, description, properties, required, handler, readonly in definitions
+        for (
+            name,
+            title,
+            description,
+            properties,
+            required,
+            handler,
+            readonly,
+            destructive,
+        ) in definitions
     }
 
 
