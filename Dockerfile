@@ -1,7 +1,9 @@
 ﻿FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    APTEKA_BASE_URL=https://api.apteka.md \
+    APTEKA_MEDIA_BASE_URL=https://api.apteka.md
 
 WORKDIR /app
 

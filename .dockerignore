@@ -1,0 +1,12 @@
+.env
+.env.*
+.git
+.venv
+node_modules
+tests/.tmp
+test-results
+.pytest_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+*.log

@@ -35,3 +35,7 @@ jobs:
           tags: |
             ${{ env.IMAGE_REPOSITORY }}:latest
             ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
+
+      - name: Verify production image configuration
+        run: |
+          docker run --rm ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }} python -c "from app.interfaces.mcp.tools.apteka_urls import get_apteka_base_url, get_apteka_media_base_url, build_front_url; assert get_apteka_base_url() == 'https://api.apteka.md'; assert get_apteka_media_base_url() == 'https://api.apteka.md'; print({'api': get_apteka_base_url(), 'media': get_apteka_media_base_url(), 'order': build_front_url('/order/confirm-order-by-using-mobile')})"
